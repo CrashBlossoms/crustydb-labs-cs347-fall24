@@ -48,8 +48,6 @@ impl Page {
         // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]
         Page { data }
     }
-    
-    
 
     /// Return the page id for a page
     ///

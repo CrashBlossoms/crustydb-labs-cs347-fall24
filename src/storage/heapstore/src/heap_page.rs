@@ -10,15 +10,7 @@ use std::fmt::Write;
 // Add any other constants, type aliases, or structs, or definitions here
 
 pub trait HeapPage {
-    fn update_header_after_deletion(&mut self, deleted_offset: usize, deleted_size: usize);
-    fn mark_slot_as_free(&mut self, slot_id: SlotId);
-    fn get_slot_metadata(&self, slot_id: SlotId) -> Option<(Offset, usize)>;
-    fn update_header(&mut self, slot_id: SlotId, offset: Offset, value_size: usize);
-    fn compact_tuples(&mut self, deleted_offset: usize, deleted_size: usize);
-    fn get_slot_offset(&self, slot_id: SlotId) -> Offset;
-    fn get_num_slots(&self) -> usize;
-    fn find_free_slot(&self) -> Option<SlotId>;
-    fn combine_u8s_to_u16_le(arr: &[u8], idx: usize) -> u16;
+
     // Do not change these functions signatures (only the function bodies)
     fn add_value(&mut self, bytes: &[u8]) -> Option<SlotId>;
     fn get_value(&self, slot_id: SlotId) -> Option<Vec<u8>>;
@@ -27,6 +19,17 @@ pub trait HeapPage {
     fn get_free_space(&self) -> usize;
 
     //Add function signatures for any helper function you need here
+    fn update_header_for_tuple(&mut self, slot_id: SlotId, offset: Offset);
+    fn reclaim_free_space_header(&mut self, freed_size: usize);
+    fn update_slots_after_deletion(&mut self, deleted_offset: usize, deleted_size: usize);
+    fn mark_slot_as_free(&mut self, slot_id: SlotId);
+    fn get_slot_metadata(&self, slot_id: SlotId) -> Option<(Offset, usize)>;
+    fn update_header(&mut self, slot_id: SlotId, offset: Offset, value_size: usize);
+    fn compact_tuples(&mut self, deleted_offset: usize, deleted_size: usize);
+    fn get_slot_offset(&self, slot_id: SlotId) -> Offset;
+    fn get_num_slots(&self) -> SlotId;
+    fn find_free_slot(&self) -> Option<SlotId>;
+    fn combine_u8s_to_u16_le(arr: &[u8], idx: usize) -> u16;
 }
 
 impl HeapPage for Page {
@@ -59,7 +62,7 @@ impl HeapPage for Page {
             let num_slots = self.get_num_slots();
             let new_header_size = 8 + (num_slots + 1) * 6;
     
-            if new_header_size + value_size > PAGE_SIZE {
+            if new_header_size as usize + value_size > PAGE_SIZE {
                 return None; //return None if there is not enough space for the tupe and a new slot
             }
     
@@ -71,7 +74,10 @@ impl HeapPage for Page {
     
         // write the data to the page
         let end = PAGE_SIZE - free_offset;
+        print!("free_offset is {}", free_offset);
         let start = end - value_size;
+        print!("value_size is {}", value_size);
+
         self.data[start..end].clone_from_slice(bytes);
     
         // Update the header
@@ -80,23 +86,39 @@ impl HeapPage for Page {
         Some(slot_id)
     }
 
-    // add tuple metadata to an open slot or add a new slot
+    // add tuple metadata to an open slot or add a new slot and update free space info
     fn update_header(&mut self, slot_id: SlotId, offset: Offset, value_size: usize) {
-        
-        let header_start = 8 + (slot_id * 6) as usize; // find where the slot's metadata should be stored in the header
-        
-        let offset_bytes = offset.to_le_bytes(); 
-        self.data[header_start..header_start + 2].clone_from_slice(&offset_bytes); // write the offset
+        // Calculate where the slot's metadata should be stored in the header
+        let header_start = 8 + (slot_id * 6) as usize; // Header starts at byte 8, each slot takes 6 bytes
 
+        // Write the offset in slot (2 bytes)
+        let offset_bytes = offset.to_le_bytes();
+        self.data[header_start..header_start + 2].clone_from_slice(&offset_bytes);
+
+        // Write the size in slot (2 bytes)
         let size_bytes = (value_size as u16).to_le_bytes();
-        self.data[header_start + 2..header_start + 4].clone_from_slice(&size_bytes); //write the tuple size
+        self.data[header_start + 2..header_start + 4].clone_from_slice(&size_bytes);
 
-        // update free space offset here!
+        // Update the free space offset in page header
+        let new_free_space_offset = (offset as usize - value_size) as u16; // Move the free space down by the size of the inserted value
+        let free_space_offset_bytes = new_free_space_offset.to_le_bytes();
+        self.data[4..6].copy_from_slice(&free_space_offset_bytes);
+
+        // Update the free space size in page header
+        let current_free_space_size = u16::from_le_bytes(self.data[6..8].try_into().unwrap()) as usize;
+        let new_free_space_size = (current_free_space_size - value_size) as u16;
+        let free_space_size_bytes = new_free_space_size.to_le_bytes();
+        self.data[6..8].copy_from_slice(&free_space_size_bytes);
     }
 
     // finds the id of a free slot
     fn find_free_slot(&self) -> Option<SlotId> {
         let num_slots = self.get_num_slots();
+
+        if num_slots == 0 {
+            return None
+        }
+
         for slot_id in 0..num_slots {
             let slot_offset = self.get_slot_offset(slot_id as u16);
             if slot_offset == 0 {
@@ -115,10 +137,12 @@ impl HeapPage for Page {
     }
 
     // Helper function to get the number of slots
-    fn get_num_slots(&self) -> usize {
-        // Calculate how many slots exist based on the current header size
-        let header_size = self.get_header_size();
-        (header_size - 8) / 6 // 6 bytes per slot after the 8-byte general metadata
+    fn get_num_slots(&self) -> SlotId {
+
+        Self::combine_u8s_to_u16_le(&self.data, 2)
+        // // Calculate how many slots exist based on the current header size
+        // let header_size = self.get_header_size();
+        // (header_size - 8) / 6 // 6 bytes per slot after the 8-byte general metadata
     }
 
     // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]  
@@ -152,10 +176,7 @@ impl HeapPage for Page {
     //gets the size and offset for a tuple with a given slot ID
     fn get_slot_metadata(&self, slot_id: SlotId) -> Option<(Offset, usize)> {
         
-        // find slot metadata in header
         let start = 8 + (slot_id * 6) as usize;
-        let end = start + 6;
-
         let offset = u16::from_le_bytes(self.data[start..start + 2].try_into().unwrap()); // get 2 bytes for tuple ofset
         let size = u16::from_le_bytes(self.data[start + 2..start + 4].try_into().unwrap()) as usize; //get 2 bytes for tuple size
 
@@ -177,19 +198,19 @@ impl HeapPage for Page {
         self.compact_tuples(offset as usize, size as usize);
 
         //update offsets of the tuples in the header to their new values
-        self.update_header_after_deletion(offset as usize, size as usize);
+        self.update_slots_after_deletion(offset as usize, size as usize);
+
+        self.reclaim_free_space_header(size as usize);
 
         Some(())
     }
 
     // Compact the tuple space after deleting the tuple at the given offset.
     fn compact_tuples(&mut self, deleted_offset: usize, deleted_size: usize) {
-        // Identify the range of tuples to shift.
-        let next_tuple_start = deleted_offset + deleted_size;
-        let free_space_start = PAGE_SIZE - next_tuple_start;
-
+ 
         // Shift tuples rightward to fill the gap.
-        self.data[deleted_offset..PAGE_SIZE].rotate_right(deleted_size);
+        let free_space_offset = Self::combine_u8s_to_u16_le(&self.data, 4) as usize;
+        self.data[(free_space_offset + 1)..(deleted_offset - 1)].rotate_right(deleted_size);
     }
 
     // marks a given slot as free so it can be resused later
@@ -198,17 +219,45 @@ impl HeapPage for Page {
         self.data[header_start..header_start + 2].clone_from_slice(&0u16.to_le_bytes()); //set offset to 0 to mark it as free
     }
 
-    fn update_header_after_deletion(&mut self, deleted_offset: usize, deleted_size: usize) {
+    //adjust the offsets for all the tuples shifted to the right after a deletion
+    fn update_slots_after_deletion(&mut self, deleted_offset: usize, deleted_size: usize) {
+        
         // Iterate over the header and update the offsets of tuples that were shifted
         for slot_id in 0..self.get_num_slots() {
             let (offset, size) = self.get_slot_metadata(slot_id as u16).unwrap();
 
-            // Only update the header if the tuple starts before the deleted tuple
-            if offset < deleted_offset as u16 {
-                let new_offset = offset as usize + deleted_size;
-                self.update_header(slot_id as u16, new_offset as Offset, size);
+            // Only update the header if the tuple starts after the deleted tuple
+            if offset as usize > deleted_offset {
+                let new_offset = offset as usize - deleted_size;
+                // Use the new function to update only the tuple's offset and size
+                self.update_header_for_tuple(slot_id as u16, new_offset as Offset);
             }
         }
+    }
+
+    //set the offset field for a given slot
+    fn update_header_for_tuple(&mut self, slot_id: SlotId, offset: Offset) {
+        // Calculate where the slot's metadata should be stored in the header
+        let slot_start = 8 + (slot_id * 6) as usize; // Header starts at byte 8, each slot takes 6 bytes
+
+        // Write the offset (2 bytes)
+        let offset_bytes = offset.to_le_bytes();
+        self.data[slot_start..slot_start + 2].clone_from_slice(&offset_bytes);
+    }
+
+    //add free space to the total and move offset when a tuple is deleted
+    fn reclaim_free_space_header(&mut self, freed_size: usize) {
+        // Update the free space offset (move it back to the deleted tuple's position)
+        //free space offset + size of deleted item
+        let free_space_offset = Self::combine_u8s_to_u16_le(&self.data, 4) as usize;
+        let free_space_offset_bytes = (free_space_offset + freed_size).to_le_bytes();
+        self.data[4..6].copy_from_slice(&free_space_offset_bytes);
+
+        // Update the free space size (increase it by the size of the deleted tuple)
+        let current_free_space_size = u16::from_le_bytes(self.data[6..8].try_into().unwrap()) as usize;
+        let new_free_space_size = (current_free_space_size + freed_size) as u16;
+        let free_space_size_bytes = new_free_space_size.to_le_bytes();
+        self.data[6..8].copy_from_slice(&free_space_size_bytes);
     }
 
     /// A utility function to determine the size of the header in the page
