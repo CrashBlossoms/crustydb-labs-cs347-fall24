@@ -23,7 +23,6 @@ const BYTES_PER_LINE: usize = 40;
 pub struct Page {
     /// The data for data
     pub(crate) data: [u8; PAGE_SIZE],
-    // let slot_num = 0,
 }
 
 /// The functions required for page
@@ -31,18 +30,26 @@ impl Page {
     /// Create a new page
     /// HINT: To convert a variable x to bytes using little endian, use
     /// x.to_le_bytes()
-    pub fn new(page_id: PageId) -> Self { 
-
+    pub fn new(page_id: PageId) -> Self {  
         let mut data = [0u8; PAGE_SIZE];
     
         // Store page_id at the start of the page in little endian
         let id_bytes = page_id.to_le_bytes();
         data[..id_bytes.len()].copy_from_slice(&id_bytes);
-        
+    
+        // Store free space offset (2 bytes) - Cast to u16 to get 2-byte little-endian representation
+        let fs_offset_bytes = (PAGE_SIZE as u16 - 1).to_le_bytes(); // Cast PAGE_SIZE to u16
+        data[4..6].copy_from_slice(&fs_offset_bytes);
+    
+        // Store initial size of free space (2 bytes) - Cast to u16 to get 2-byte little-endian representation
+        let fs_size_initial = (PAGE_SIZE as u16 - 8).to_le_bytes(); // Cast PAGE_SIZE to u16
+        data[6..8].copy_from_slice(&fs_size_initial);
+    
+        // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]
         Page { data }
-
-        // todo!("Your code here")
     }
+    
+    
 
     /// Return the page id for a page
     ///
@@ -50,11 +57,7 @@ impl Page {
     /// (the example is for a u16 type and the data store in little endian)
     /// u16::from_le_bytes(data[X..Y].try_into().unwrap());
     pub fn get_page_id(&self) -> PageId {
-        // todo!("Your code here")
-        
- 
-        PageId::from_le_bytes(self.data[..std::mem::size_of::<PageId>()].try_into().unwrap())   
-        
+        PageId::from_le_bytes(self.data[..std::mem::size_of::<PageId>()].try_into().unwrap())
     }
 
     /// Create a page from a byte array

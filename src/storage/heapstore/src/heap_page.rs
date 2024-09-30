@@ -90,6 +90,8 @@ impl HeapPage for Page {
 
         let size_bytes = (value_size as u16).to_le_bytes();
         self.data[header_start + 2..header_start + 4].clone_from_slice(&size_bytes); //write the tuple size
+
+        // update free space offset here!
     }
 
     // finds the id of a free slot
