@@ -38,7 +38,7 @@ impl Page {
         data[..id_bytes.len()].copy_from_slice(&id_bytes);
     
         // Store free space offset (2 bytes) - Cast to u16 to get 2-byte little-endian representation
-        let fs_offset_bytes = (PAGE_SIZE as u16 - 1).to_le_bytes(); // Cast PAGE_SIZE to u16
+        let fs_offset_bytes = 0u16.to_le_bytes(); // Cast PAGE_SIZE to u16
         data[4..6].copy_from_slice(&fs_offset_bytes);
     
         // Store initial size of free space (2 bytes) - Cast to u16 to get 2-byte little-endian representation

@@ -44,7 +44,7 @@ impl HeapPage for Page {
     /// HINT: You can copy/clone bytes into a slice using the following function.
     /// They must have the same size.
     /// self.data[X..y].clone_from_slice(&bytes);
-    fn add_value(&mut self, bytes: &[u8]) -> Option<SlotId> {
+    fn add_value(&mut self, bytes: &[u8]) -> Option<SlotId> { //wrong slot!
         let value_size = bytes.len();
         let free_space = self.get_free_space();
         let total_needed = value_size + 6; // 6 bytes for the new slot
@@ -58,15 +58,18 @@ impl HeapPage for Page {
         let slot_id = if let Some(free_slot) = self.find_free_slot() {
             free_slot
         } else {
+
+            println!("in else statement");
             // if no free slot is found, check if we can add a new slot
             let num_slots = self.get_num_slots();
             let new_header_size = 8 + (num_slots + 1) * 6;
     
             if new_header_size as usize + value_size > PAGE_SIZE {
+                println!("not enough space for new slot");
                 return None; //return None if there is not enough space for the tupe and a new slot
             }
     
-            num_slots as u16 // return the next available slot ID
+            (num_slots + 1) as u16 // return the next available slot ID
         };
     
         // find free space on the other end of the page (the "right side")
@@ -74,15 +77,14 @@ impl HeapPage for Page {
     
         // write the data to the page
         let end = PAGE_SIZE - free_offset;
-        print!("free_offset is {}", free_offset);
         let start = end - value_size;
-        print!("value_size is {}", value_size);
 
         self.data[start..end].clone_from_slice(bytes);
     
         // Update the header
         self.update_header(slot_id, start as Offset, value_size);
     
+        println!("chosen slot id is: {}", slot_id);
         Some(slot_id)
     }
 
@@ -116,6 +118,7 @@ impl HeapPage for Page {
         let num_slots = self.get_num_slots();
 
         if num_slots == 0 {
+            println!("returning None");
             return None
         }
 
@@ -139,7 +142,9 @@ impl HeapPage for Page {
     // Helper function to get the number of slots
     fn get_num_slots(&self) -> SlotId {
 
-        Self::combine_u8s_to_u16_le(&self.data, 2)
+        let x = Self::combine_u8s_to_u16_le(&self.data, 2);
+        println!("number of slots is: {}", x);
+        x
         // // Calculate how many slots exist based on the current header size
         // let header_size = self.get_header_size();
         // (header_size - 8) / 6 // 6 bytes per slot after the 8-byte general metadata
