@@ -1,0 +1,22 @@
+In my heap page design, the page header and slots are stored on the "left" side of the page (lower addressed) and the tuples are stored on the 
+right. The two sides grow towards each other as data is added. I chose to compact the free space immediately after every deletion. This is likely 
+not optimal as deleting could become very slow if we have lots of tuples and we repeatedly delete from the "end" (right side of page). However, 
+this version is easier to program which is why I went with it. I wanted avoid complexities like maintaining a linked list of free space and deciding 
+when free space is fragmented "too much". 
+
+In this approach deciding where to add a tuple is easy as you always insert at the free space offset then increment the offset by the size of the
+data you added. If you delete any tuple, you shift every tuple with an offset less than the it's offset to the right by the size of the deleted tuple. 
+Then, simply increment the free space offset and total free space by that same amount.
+
+To mark a slot as "empty" I set its offset to 0. This is an impossible offset as 0 is where the page header would be. To actually delete a tuple, 
+I select everything from the free space start + 1 (the first byte of the last inserted tuple) to the deleted tuple's offset - 1 (last byte of tuple
+left of it). I then rotate right by the size of the deleted tuple, effectively making the deleted tuple and everything to its left switch places. 
+Because the free space offset is shifted right by the deleted tuple's size, the bytes that made up the deleted tuple are treated as free space and
+are incidentally overwritten when the next tuple is added. In real systems this data is probably destroyed more intentionally if the system is working
+with sensitive data. 
+
+I probably spent 2 weeks working on this project to get it completed. I enjoyed figuring out how to compact the free space without damaging the tuples
+or having their pointers misaligned. Probably the biggest challenge was realizing that certain parts of Rust (like rotate right) do not function 
+in quite the way I thought they did.
+
+I have all of the tests passing and overall I am proud of what I made.
