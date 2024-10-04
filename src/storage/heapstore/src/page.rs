@@ -1,4 +1,9 @@
 pub use crate::heap_page::HeapPage;
+use crate::heap_page::FIXED_HEADER_SIZE;
+use crate::heap_page::FS_OFFSET_0;
+use crate::heap_page::FS_OFFSET_1;
+use crate::heap_page::FS_SIZE_0;
+use crate::heap_page::FS_SIZE_1;
 use common::prelude::*;
 use common::PAGE_SIZE;
 use common::PAGE_SLOTS;
@@ -33,17 +38,17 @@ impl Page {
     pub fn new(page_id: PageId) -> Self {  
         let mut data = [0u8; PAGE_SIZE];
     
-        // Store page_id at the start of the page in little endian
+        // store page_id at the start of the page in little endian
         let id_bytes = page_id.to_le_bytes();
         data[..id_bytes.len()].copy_from_slice(&id_bytes);
     
-        // Store free space offset (2 bytes) - Cast to u16 to get 2-byte little-endian representation
-        let fs_offset_bytes = 0u16.to_le_bytes(); // Cast PAGE_SIZE to u16
-        data[4..6].copy_from_slice(&fs_offset_bytes);
+        // store free space offset (2 bytes)
+        let fs_offset_bytes = 0u16.to_le_bytes();
+        data[FS_OFFSET_0..FS_OFFSET_1 + 1].copy_from_slice(&fs_offset_bytes);
     
-        // Store initial size of free space (2 bytes) - Cast to u16 to get 2-byte little-endian representation
-        let fs_size_initial = (PAGE_SIZE as u16 - 8).to_le_bytes(); // Cast PAGE_SIZE to u16
-        data[6..8].copy_from_slice(&fs_size_initial);
+        // store initial size of free space (2 bytes)
+        let fs_size_initial = (PAGE_SIZE as u16 - FIXED_HEADER_SIZE as u16).to_le_bytes();
+        data[FS_SIZE_0..FS_SIZE_1 + 1].copy_from_slice(&fs_size_initial);
     
         // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]
         Page { data }
