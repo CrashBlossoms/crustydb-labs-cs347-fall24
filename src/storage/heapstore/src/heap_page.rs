@@ -37,7 +37,7 @@ pub trait HeapPage {
     fn update_slots_after_deletion(&mut self, deleted_offset: usize, deleted_size: usize);
     fn mark_slot_as_free(&mut self, slot_id: SlotId);
     fn get_slot_metadata(&self, slot_id: SlotId) -> Option<(Offset, usize)>;
-    fn add_tuple_metadata(&mut self, slot_id: SlotId, offset: Offset, value_size: usize, reuse: bool);
+    fn add_tuple_metadata(&mut self, slot_id: SlotId, offset: Offset, value_size: usize);
     fn compact_free_space(&mut self, deleted_offset: usize, deleted_size: usize);
     fn get_slot_offset(&self, slot_id: SlotId) -> Offset;
     fn get_num_slots(&self) -> usize;
@@ -69,11 +69,8 @@ impl HeapPage for Page {
             return None;
         }
 
-        let mut reuse = false;
-
         // Try to find an existing free slot, or add a new one if there's enough space
         let slot_id = if let Some(free_slot) = self.find_free_slot() {
-            reuse = true;
             free_slot
         } else {
             // No free slot found, add a new slot
@@ -100,7 +97,7 @@ impl HeapPage for Page {
         self.data[start..end].clone_from_slice(bytes);
 
         // Update the header
-        self.add_tuple_metadata(slot_id, start as Offset, value_size, reuse);
+        self.add_tuple_metadata(slot_id, start as Offset, value_size);
 
         Some(slot_id)
     }
@@ -117,7 +114,7 @@ impl HeapPage for Page {
     }
 
     // add tuple metadata to an open slot or add a new slot and update free space info
-    fn add_tuple_metadata(&mut self, slot_id: SlotId, offset: Offset, value_size: usize, reuse: bool) {
+    fn add_tuple_metadata(&mut self, slot_id: SlotId, offset: Offset, value_size: usize) {
         
         //calculate start of the slot
         let slot_start = FIXED_HEADER_SIZE + (slot_id * SLOT_SIZE) as usize; // Header starts at byte 8, each slot takes 6 bytes
