@@ -1,13 +1,28 @@
 use crate::page;
 use crate::page::{Offset, Page};
 use common::crusty_graph::NodeIndex;
-use common::prelude::*;
+use common::{prelude::*, query_result};
 use common::PAGE_SIZE;
 use std::fmt;
 use std::fmt::Write;
 // todo!("Add any other imports you need here")
 
 // Add any other constants, type aliases, or structs, or definitions here
+pub const FIXED_HEADER_SIZE: usize = 8;
+pub const SLOT_SIZE: u16 = 6;
+pub const PAGE_ID_0: usize = 0;
+pub const PAGE_ID_1: usize = 1;
+pub const NUM_SLOTS_0: usize = 2;
+pub const NUM_SLOTS_1: usize = 3;
+pub const FS_OFFSET_0: usize = 4;
+pub const FS_OFFSET_1: usize = 5;
+pub const FS_SIZE_0: usize = 6;
+pub const FS_SIZE_1: usize = 7;
+pub const INVALID_OFFSET: u16 = 0;
+// pub const 
+
+
+  // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]  
 
 pub trait HeapPage {
     // Do not change these functions signatures (only the function bodies)
@@ -18,18 +33,17 @@ pub trait HeapPage {
     fn get_free_space(&self) -> usize;
 
     //Add function signatures for any helper function you need here
-    fn update_header_for_tuple(&mut self, slot_id: SlotId, offset: Offset);
+    fn update_tuple_offset(&mut self, slot_id: SlotId, offset: Offset);
     fn reclaim_free_space_header(&mut self, freed_size: usize);
     fn update_slots_after_deletion(&mut self, deleted_offset: usize, deleted_size: usize);
     fn mark_slot_as_free(&mut self, slot_id: SlotId);
     fn get_slot_metadata(&self, slot_id: SlotId) -> Option<(Offset, usize)>;
-    fn update_header(&mut self, slot_id: SlotId, offset: Offset, value_size: usize);
+    fn update_header(&mut self, slot_id: SlotId, offset: Offset, value_size: usize, reuse: bool);
     fn compact_free_space(&mut self, deleted_offset: usize, deleted_size: usize);
     fn get_slot_offset(&self, slot_id: SlotId) -> Offset;
     fn get_num_slots(&self) -> usize;
     fn find_free_slot(&self) -> Option<SlotId>;
     fn combine_u8s_to_u16_le(arr: &[u8], idx: usize) -> u16;
-    fn decrement_slot_count(&mut self);
     fn update_slot_counter(&mut self, num_slots: u16);
     // fn right_shift(arr: &mut [u8], start: usize, end: usize, shift_by: usize);
 }
@@ -53,16 +67,20 @@ impl HeapPage for Page {
 
         // Check if there is enough space for the new slot and the value
         if free_space < total_needed {
+            println!("not enough space foe new item and it's slot!");
             return None;
         }
 
+        let mut reuse = false;
+
         // Try to find an existing free slot, or add a new one if there's enough space
         let slot_id = if let Some(free_slot) = self.find_free_slot() {
+            reuse = true;
             free_slot
         } else {
             // No free slot found, add a new slot
             let num_slots = self.get_num_slots();
-            let new_header_size = 8 + (num_slots + 1) * 6;
+            let new_header_size = FIXED_HEADER_SIZE + (num_slots + 1) * SLOT_SIZE as usize;
 
             if new_header_size + value_size > PAGE_SIZE {
                 return None; // Not enough space for a new slot and the value
@@ -76,27 +94,23 @@ impl HeapPage for Page {
         };
 
         // Find free space on the other end of the page (the "right side")
-        let free_offset = Self::combine_u8s_to_u16_le(&self.data, 4) as usize;
+        let free_offset = Self::combine_u8s_to_u16_le(&self.data, FS_OFFSET_0 as usize) as usize;
 
         // Write the data to the page
         let end = PAGE_SIZE - free_offset; //subtract with overflow?
         let start = end - value_size;
         self.data[start..end].clone_from_slice(bytes);
 
-        println!("adding a tuple");
-        println!("tuple starts at {}", start);
-
         // Update the header
-        self.update_header(slot_id, start as Offset, value_size);
+        self.update_header(slot_id, start as Offset, value_size, reuse);
 
         Some(slot_id)
     }
 
-
     // Updates the slot counter stored in indices 2 and 3 of the data array.
     fn update_slot_counter(&mut self, num_slots: u16) {
         let num_slots_bytes = num_slots.to_le_bytes();
-        self.data[2..4].copy_from_slice(&num_slots_bytes);
+        self.data[NUM_SLOTS_0..NUM_SLOTS_1 + 1].copy_from_slice(&num_slots_bytes);
     }
 
     // Retrieves the current number of slots stored in indices 2 and 3 of the data array.
@@ -105,31 +119,31 @@ impl HeapPage for Page {
     }
 
     // add tuple metadata to an open slot or add a new slot and update free space info
-    fn update_header(&mut self, slot_id: SlotId, offset: Offset, value_size: usize) {
-        // Calculate where the slot's metadata should be stored in the header
-        let header_start = 8 + (slot_id * 6) as usize; // Header starts at byte 8, each slot takes 6 bytes
+    fn update_header(&mut self, slot_id: SlotId, offset: Offset, value_size: usize, reuse: bool) {
+        
+        //calculate start of the slot
+        let slot_start = FIXED_HEADER_SIZE + (slot_id * SLOT_SIZE) as usize; // Header starts at byte 8, each slot takes 6 bytes
 
-        // Write the offset in slot (2 bytes)
+        // write the tuple offset in slot (2 bytes)
         let offset_bytes = offset.to_le_bytes();
-        self.data[header_start..header_start + 2].clone_from_slice(&offset_bytes);
+        self.data[slot_start..slot_start + 2].clone_from_slice(&offset_bytes);
 
-        // Write the size in slot (2 bytes)
+        // write the tuple size in slot (2 bytes)
         let size_bytes = (value_size as u16).to_le_bytes();
-        self.data[header_start + 2..header_start + 4].clone_from_slice(&size_bytes);
+        self.data[slot_start + 2..slot_start + 4].clone_from_slice(&size_bytes);
 
-        // Update the free space offset in page header
-        let old_fs_offet = Self::combine_u8s_to_u16_le(&self.data, 4) as usize; // get old fs offset
+        // update the free space offset in page header
+        let old_fs_offet = Self::combine_u8s_to_u16_le(&self.data, FS_OFFSET_0) as usize; // get old fs offset
         let new_free_space_offset = (old_fs_offet + value_size) as u16; // Move the free space down by the size of the inserted value
         let free_space_offset_bytes = new_free_space_offset.to_le_bytes();
-        self.data[4..6].copy_from_slice(&free_space_offset_bytes);
+        self.data[FS_OFFSET_0..FS_OFFSET_1 + 1].copy_from_slice(&free_space_offset_bytes);
 
-        // Update the free space size in page header
-        let current_free_space_size = u16::from_le_bytes(self.data[6..8].try_into().unwrap()) as usize;
+        // update the free space size in page header
+        let current_free_space_size = u16::from_le_bytes(self.data[FS_SIZE_0..FS_SIZE_1 + 1].try_into().unwrap()) as usize;
         let new_free_space_size = (current_free_space_size - value_size - 6) as u16; // -6 is for size of slot
         let free_space_size_bytes = new_free_space_size.to_le_bytes();
-        self.data[6..8].copy_from_slice(&free_space_size_bytes);
+        self.data[FS_SIZE_0..FS_SIZE_1 + 1].copy_from_slice(&free_space_size_bytes);
     }
-    
 
     // finds the id of a free slot
     fn find_free_slot(&self) -> Option<SlotId> {
@@ -142,7 +156,7 @@ impl HeapPage for Page {
 
         for slot_id in 0..num_slots {
             let slot_offset = self.get_slot_offset(slot_id as u16);
-            if slot_offset == 0 {
+            if slot_offset == INVALID_OFFSET {
                 return Some(slot_id as u16); // Found a free slot
             }
         }
@@ -151,34 +165,26 @@ impl HeapPage for Page {
 
     // Helper function to get the offset for a given slot_id from the header
     fn get_slot_offset(&self, slot_id: SlotId) -> Offset {
-        // Calculate where the slot's metadata is stored in the header (e.g., at `8 + slot_id * 6` for the offset)
-        let start = 8 + (slot_id * 6) as usize;
+        //calculate where the slot's metadata is stored in the header
+        let start = FIXED_HEADER_SIZE + (slot_id * SLOT_SIZE) as usize;
         let end = start + 2; // 2 bytes for the offset
         u16::from_le_bytes(self.data[start..end].try_into().unwrap())
     }
 
-    // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]  
-
     /// Return the bytes for the slotId. If the slotId is not valid then return None
     fn get_value(&self, slot_id: SlotId) -> Option<Vec<u8>> {
-
-        println!("getting value in slot: {}", slot_id);
         
         //check if the slot_id is valid
         let num_slots = self.get_num_slots();
-        // println!("num_slots is: {}", num_slots);
         if slot_id >= num_slots as u16{
             return None;
         }
 
         //get tuple's offset and size from the header
         let (offset, size) = self.get_slot_metadata(slot_id)?;
-        println!("getting tuple from offset: {}", offset);
-        println!("tuple size is: {}", size);
 
         //if the offset is 0, the slot is free
-        if offset == 0 { //chenge this is -1
-            println!("slot is free, returning None");
+        if offset == INVALID_OFFSET {
             return None;
         }
 
@@ -187,14 +193,14 @@ impl HeapPage for Page {
         let end = start + size as usize;
         let tuple_bytes = self.data[start..end].to_vec();
 
-        // 5. Return the extracted tuple bytes
+        //return the extracted tuple bytes
         Some(tuple_bytes)
     }
 
-    //gets the size and offset for a tuple with a given slot ID
-    fn get_slot_metadata(&self, slot_id: SlotId) -> Option<(Offset, usize)> { //problem with compaction i think, shifting right too far?
+    //get the size and offset for a tuple with a given slot ID
+    fn get_slot_metadata(&self, slot_id: SlotId) -> Option<(Offset, usize)> {
         
-        let start = 8 + (slot_id * 6) as usize;
+        let start = FIXED_HEADER_SIZE + (slot_id * SLOT_SIZE) as usize;
         let offset = u16::from_le_bytes(self.data[start..start + 2].try_into().unwrap()); // get 2 bytes for tuple ofset
         let size = u16::from_le_bytes(self.data[start + 2..start + 4].try_into().unwrap()) as usize; //get 2 bytes for tuple size
 
@@ -206,88 +212,65 @@ impl HeapPage for Page {
     /// The space for the value should be free to use for a later added value.
     /// HINT: Return Some(()) for a valid delete
     fn delete_value(&mut self, slot_id: SlotId) -> Option<()> {
-        println!("deleting value in slot: {}", slot_id);
+
         //get the offset and size of the tuple to be deleted
         let (offset, size) = self.get_slot_metadata(slot_id)?;
 
         //mark the slot as free
         self.mark_slot_as_free(slot_id);
-        // println!("after mark slot as free");
-        // println!("after mark free num_slots is: {}", self.get_num_slots());
 
         //shift tuples left of deleted one to the right to compact the space
         self.compact_free_space(offset as usize, size as usize);
-        
-        // println!("after compact num_slots is: {}", self.get_num_slots());
 
         //update offsets of the tuples in the header to their new values
         self.update_slots_after_deletion(offset as usize, size as usize);
 
-        // println!("after update slots num_slots is: {}", self.get_num_slots());
-
+        //add the freed space back to the total
         self.reclaim_free_space_header(size as usize);
-
-        // println!("after reclaim num_slots is: {}", self.get_num_slots());
-
-        // self.decrement_slot_count(&self.data);
 
         Some(())
     }
 
     // Compact the tuple space after deleting the tuple at the given offset.
     fn compact_free_space(&mut self, deleted_offset: usize, deleted_size: usize) {
-        println!("in compact_free_space");
 
-        let fs_offset = Self::combine_u8s_to_u16_le(&self.data, 4) as usize;
-        // println!("offset is {}", fs_offset); //offset of free space is not updated?
- 
+        let fs_offset = Self::combine_u8s_to_u16_le(&self.data, FS_OFFSET_0) as usize;
+
         // Shift tuples rightward to fill the gap.
-        let free_space_start = PAGE_SIZE - 1 - fs_offset; // might need -1
-        println!("free space start is: {}", free_space_start);
-        println!("deleted offset is: {}", deleted_offset);
-        println!("deleted size is: {}", deleted_size);
+        let free_space_start = PAGE_SIZE - 1 - fs_offset;
 
         self.data[(free_space_start + 1)..(deleted_offset + deleted_size)].rotate_right(deleted_size);
-        // Self::right_shift(&mut self.data, free_space_start + 1, deleted_offset - 1, deleted_size);
-
-        // self.data[(free_space_start + 1)..(deleted_offset)].rotate_right(deleted_size);
     }
-    // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]  
 
     // marks a given slot as free so it can be resused later
     fn mark_slot_as_free(&mut self, slot_id: SlotId) {
-        let header_start = 8 + (slot_id * 6) as usize; //find slot in header
-        self.data[header_start..header_start + 2].clone_from_slice(&0u16.to_le_bytes()); //set offset to 0 to mark it as free
+        let header_start = FIXED_HEADER_SIZE + (slot_id * SLOT_SIZE) as usize; //find slot in header
+        self.data[header_start..header_start + 2].clone_from_slice(&INVALID_OFFSET.to_le_bytes()); //set offset to 0 to mark it as free
     }
 
     //adjust the offsets for all the tuples shifted to the right after a deletion
     fn update_slots_after_deletion(&mut self, deleted_offset: usize, deleted_size: usize) { //problem here!
         
-        // println!("deleted offset is: {}", deleted_offset);
-
-        // Iterate over the header and update the offsets of tuples that were shifted
+        //iterate over the header and update the offsets of tuples that were shifted
         for slot_id in 0..self.get_num_slots() {
             let (offset, size) = self.get_slot_metadata(slot_id as u16).unwrap();
 
-            // println!("working on slot: {}", slot_id);
-            // println!("this slot's offset is: {}", offset);
-            // println!("this slot's size is: {}", size);
-
             // Only update the header if the tuple starts after the deleted tuple
-            if (offset as usize) < deleted_offset && offset != 0 { //not checking if slot is invalid
+            if (offset as usize) < deleted_offset && offset != INVALID_OFFSET {
                 
                 let new_offset = offset as usize + deleted_size;
-                // println!("this offset is less than deleted's, new offset is: {}", new_offset);
-                // Use the new function to update only the tuple's offset and size
-                self.update_header_for_tuple(slot_id as u16, new_offset as Offset);
+
+                //update only the tuple's offset
+                self.update_tuple_offset(slot_id as u16, new_offset as Offset);
             }
         }
     }
 
     //update the offset field in the slot for a given tuple 
-    fn update_header_for_tuple(&mut self, slot_id: SlotId, offset: Offset) {
-        // Calculate where the slot's metadata should be stored in the header
-        let slot_start = 8 + (slot_id * 6) as usize; // Header starts at byte 8, each slot takes 6 bytes
+    fn update_tuple_offset(&mut self, slot_id: SlotId, offset: Offset) {
+        
+        // calculate where the slot's metadata should be stored in the header
+        let slot_start = FIXED_HEADER_SIZE + (slot_id * SLOT_SIZE) as usize;
 
         // Write the offset (2 bytes)
         let offset_bytes = offset.to_le_bytes();
@@ -296,37 +279,31 @@ impl HeapPage for Page {
 
     //add free space to the total and move offset when a tuple is deleted
     fn reclaim_free_space_header(&mut self, freed_size: usize) {
+
         // Free space offset + size of deleted item
-        let free_space_offset = Self::combine_u8s_to_u16_le(&self.data, 4) as usize;
-        
-        // Cast to u16 to ensure it's 2 bytes before calling `to_le_bytes`
-        let free_space_offset_updated = (free_space_offset + freed_size) as u16;
+        let free_space_offset = Self::combine_u8s_to_u16_le(&self.data, FS_OFFSET_0) as usize;
+
+        // update the free space offset
+        let free_space_offset_updated = (free_space_offset - freed_size) as u16;
         let free_space_offset_bytes = free_space_offset_updated.to_le_bytes();
-        self.data[4..6].copy_from_slice(&free_space_offset_bytes);
-    
-        // Update the free space size (increase it by the size of the deleted tuple)
-        let current_free_space_size = u16::from_le_bytes(self.data[6..8].try_into().unwrap()) as usize;
+        self.data[FS_OFFSET_0..FS_OFFSET_1 + 1].copy_from_slice(&free_space_offset_bytes);
+
+        // update the free space size (increase it by the size of the deleted tuple)
+        let current_free_space_size = u16::from_le_bytes(self.data[FS_SIZE_0..FS_SIZE_1 + 1].try_into().unwrap()) as usize;
         let new_free_space_size = (current_free_space_size + freed_size) as u16;
         let free_space_size_bytes = new_free_space_size.to_le_bytes();
-        self.data[6..8].copy_from_slice(&free_space_size_bytes);
+        self.data[FS_SIZE_0..FS_SIZE_1 + 1].copy_from_slice(&free_space_size_bytes);
     }
     // [pageID, pageID, num slots, num slots, fs offset, fs offset, fs size, fs size]
-
-    fn decrement_slot_count(&mut self) {
-        let num_slots = self.get_num_slots() - 1;
-        self.update_slot_counter(num_slots as u16);
-    }
 
     /// A utility function to determine the size of the header in the page
     /// when serialized/to_bytes.
     /// Will be used by tests.
     #[allow(dead_code)]
     fn get_header_size(&self) -> usize {
-        let page_header_size = 8;
-        let slot_size = 6;
         let num_slots = self.get_num_slots(); // get number of slots from data bytes in array
 
-        return page_header_size + (slot_size * num_slots);
+        return FIXED_HEADER_SIZE + (SLOT_SIZE as usize * num_slots);
     }
 
     //takes two contiguous indices in the data array and makes into a single u16
@@ -339,7 +316,7 @@ impl HeapPage for Page {
     /// Will be used by tests.
     #[allow(dead_code)]
     fn get_free_space(&self) -> usize {
-        return Self::combine_u8s_to_u16_le(&self.data, 6) as usize; // gets the free space fields from data array
+        return Self::combine_u8s_to_u16_le(&self.data, FS_SIZE_0) as usize; // gets the free space fields from data array
     }
 }
 
@@ -812,10 +789,10 @@ mod tests {
         assert_eq!(Some(3), p.add_value(&values[3]));
         assert_eq!(Some(4), p.add_value(&values[4]));
         assert_eq!(values[0], p.get_value(0).unwrap());
-        assert_eq!(None, p.add_value(&values[0]));
-        assert_eq!(Some(()), p.delete_value(1));
+        assert_eq!(None, p.add_value(&values[0])); //not enough space for this one (correct)
+        assert_eq!(Some(()), p.delete_value(1)); //problema!
         assert_eq!(None, p.get_value(1));
-        assert_eq!(Some(1), p.add_value(&values[5]));
+        assert_eq!(Some(1), p.add_value(&values[5])); // problem with reusing free slot (gets slot ID properly)
         assert_eq!(values[5], p.get_value(1).unwrap());
     }
 
