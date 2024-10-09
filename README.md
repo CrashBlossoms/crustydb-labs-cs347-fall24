@@ -29,7 +29,7 @@ crate. The files that you need to modify are:
 - `src/storage/heapstore/src/heapfileiter.rs`
 - `src/storage/heapstore/src/storage_manager.rs`
 
-Please see your handout instructions for more information.
+Please see the [handout instructions](docs/lab2-heapfile.md) for more information.
 
 ## Lab 3 - Query Operator Milestone
 Complete the implementation of the query operators in the `src/queryexe/src/opiterator`

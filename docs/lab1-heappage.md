@@ -1,4 +1,4 @@
-_Due Date: Tuesday, October 8th, 2024 at 11:59 am (Noon)_
+_Due Date: Tuesday, October 10th, 2024 at 11:59 am (Noon)_
 
 Welcome to CrustyDB! CrustyDB is an academic Rust-based relational database
 management system built by [ChiData at The University of
@@ -506,10 +506,7 @@ more complex pages and verity that the implementation is correct.
 ### Testing
 80% of your score on this lab is based on correctness. Correctness is
 demonstrated by passing all of the provided unit in the HS package related to
-the page. We also will have additional tests that will not be provided but
-evaluate requirements from this document. 
-Majority of the points will come from
-the provided tests. To run the provided tests use `cargo test -p heapstore
+the page. There will be 20 tests in total. To run the provided tests use `cargo test -p heapstore
 hs_page` and ensure all the tests pass.
 
 ### Quality
