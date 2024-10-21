@@ -43,21 +43,41 @@ impl HeapFile {
         {
             Ok(f) => f,
             Err(error) => {
-                return Err(CrustyError::CrustyError(format!(
+                return Err(CrustyError::CrustyError(format!(  //return a CrustyError if file path or page id are invalid
                     "Cannot open or create heap file: {} {:?}",
                     file_path.to_string_lossy(),
                     error
                 )))
             }
         };
-        panic!("TODO milestone hs");
+
+        let file = Arc::new(RwLock::new(file)); // thread safe access of file
+
+        // return the new HeapFile instance with the file and container_id
+        Ok(Self {
+            file,           
+            container_id,   
+            read_count: Into::into(0),
+            write_count: Into::into(0),   
+        })
     }
 
     /// Return the number of pages for this HeapFile.
     /// Return type is PageId (alias for another type) as we cannot have more
     /// pages than PageId can hold.
     pub fn num_pages(&self) -> PageId {
-        panic!("TODO milestone hs");
+
+        //lock the file for reading the metadata
+        let file = self.file.read().unwrap();
+        let metadata = file.metadata().expect("Failed to get file metadata");
+
+        //get the size of the file in bytes
+        let file_size = metadata.len();
+
+        //calculate the number of pages
+        let num_pages = (file_size / PAGE_SIZE as u64) as PageId;
+
+        num_pages
     }
 
     /// Read the page from the file.
@@ -69,7 +89,21 @@ impl HeapFile {
         {
             self.read_count.fetch_add(1, Ordering::Relaxed);
         }
-        panic!("TODO milestone hs");
+
+        // Lock the file for reading
+        let mut file = self.file.write().unwrap();
+
+        // calculate the offset
+        let offset = (pid as u64) * PAGE_SIZE as u64;
+        file.seek(SeekFrom::Start(offset)).map_err(|e| CrustyError::CrustyError(format!("Failed to seek to page position: {:?}", e)))?;
+
+        //create a buffer to hold the page data
+        let mut buffer = [0u8; PAGE_SIZE];
+
+        //read PAGE_SIZE bytes into the buffer
+        file.read_exact(&mut buffer).map_err(|e| CrustyError::CrustyError(format!("Failed to read page: {:?}", e)))?;
+
+        Ok(Page::from_bytes(buffer))
     }
 
     /// Take a page and write it to the underlying file.
@@ -85,7 +119,22 @@ impl HeapFile {
         {
             self.write_count.fetch_add(1, Ordering::Relaxed);
         }
-        panic!("TODO milestone hs");
+
+        //get page id and use it to get offset
+        let page_id = page.get_page_id();
+        let offset = (page_id as u64) * PAGE_SIZE as u64;
+
+        let mut file = self.file.write().unwrap();
+
+        file.seek(SeekFrom::Start(offset)).map_err(|e| CrustyError::CrustyError(format!("Failed to seek to page position: {:?}", e)))?;
+
+        //get the bytes of the page
+        let page_bytes = page.to_bytes();
+
+        //write the bytes to the file
+        file.write_all(page_bytes).map_err(|e| CrustyError::CrustyError(format!("Failed to write page: {:?}", e)))?;
+
+        Ok(())
     }
 }
 
