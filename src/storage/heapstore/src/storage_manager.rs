@@ -1,4 +1,4 @@
-use crate::heap_page::HeapPage;
+use crate::heap_page::{self, HeapPage};
 use crate::heapfile::HeapFile;
 use crate::heapfileiter::HeapFileIterator;
 use crate::page::Page;
@@ -42,7 +42,17 @@ impl StorageManager {
         _perm: Permissions,
         _pin: bool,
     ) -> Option<Page> {
-        panic!("TODO milestone hs");
+        // Step 1: Lock the RwLock on the cid_heapfile_map to access the HashMap
+        let heapfile_map = self.cid_heapfile_map.read().unwrap();
+
+        // Step 2: Look up the heap file in the HashMap using container_id
+        let heap_file = heapfile_map.get(&container_id)?.clone();  // Clone the Arc<HeapFile>
+
+        // Step 3: Read the page from the heap file using the page_id
+        let page = heap_file.read_page_from_file(page_id).ok()?;
+
+        // Step 4: Return the page if found
+        Some(page)
     }
 
     /// Write a page
@@ -52,20 +62,54 @@ impl StorageManager {
         page: &Page,
         _tid: TransactionId,
     ) -> Result<(), CrustyError> {
-        panic!("TODO milestone hs");
+        // Step 1: Lock the RwLock on the cid_heapfile_map to access the HashMap
+        let heapfile_map = self.cid_heapfile_map.read().unwrap();
+
+        // Step 2: Look up the heap file in the HashMap using container_id
+        let heap_file = heapfile_map.get(&container_id)
+            .ok_or_else(|| CrustyError::CrustyError("HeapFile not found".to_string()))?
+            .clone();  // Clone the Arc<HeapFile> to get shared ownership
+
+        // Step 3: Write the page to the heap file using page_id
+        heap_file.write_page_to_file(page)
+            .map_err(|e| CrustyError::CrustyError(format!("Failed to write page: {:?}", e)))?;
+
+        // Step 4: Return Ok to indicate success
+        Ok(())
     }
 
     /// Get the number of pages for a container
     fn get_num_pages(&self, container_id: ContainerId) -> PageId {
-        panic!("TODO milestone hs");
+        // Step 1: Lock the RwLock on the cid_heapfile_map to access the HashMap
+        let heapfile_map = self.cid_heapfile_map.read().unwrap();
+
+        // Step 2: Look up the heap file in the HashMap using container_id
+        if let Some(heap_file) = heapfile_map.get(&container_id) {
+            // Step 3: Return the number of pages by calling num_pages on the HeapFile
+            heap_file.num_pages()
+        } else {
+            // If the heap file doesn't exist, return 0
+            0
+        }
     }
 
     /// Test utility function for counting reads and writes served by the heap file.
     /// Can return 0,0 for invalid container_ids
     #[allow(dead_code)]
     pub(crate) fn get_hf_read_write_count(&self, container_id: ContainerId) -> (u16, u16) {
-        panic!("TODO milestone hs");
+        let heapfile_map = self.cid_heapfile_map.read().unwrap();
+    
+        if let Some(heap_file) = heapfile_map.get(&container_id) {
+            // Fetch the value of AtomicU16 using .load(Ordering::Relaxed)
+            let read_count = heap_file.read_count.load(Ordering::Relaxed);
+            let write_count = heap_file.write_count.load(Ordering::Relaxed);
+            (read_count, write_count)
+        } else {
+            // If the heap file doesn't exist, return (0, 0)
+            (0, 0)
+        }
     }
+    
 
     /// For testing
     pub fn get_page_debug(&self, container_id: ContainerId, page_id: PageId) -> String {

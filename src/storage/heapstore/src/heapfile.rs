@@ -60,6 +60,8 @@ impl HeapFile {
             read_count: Into::into(0),
             write_count: Into::into(0),   
         })
+
+        //add heapfile to cid map here!?
     }
 
     /// Return the number of pages for this HeapFile.
