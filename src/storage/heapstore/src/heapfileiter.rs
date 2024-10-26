@@ -70,12 +70,16 @@ impl Iterator for HeapFileIterator {
 
         // If there's a current page iterator, try to get the next value
         if let Some(ref mut page_iter) = self.current_page_iter {
-            if let Some((value, slot_id)) = page_iter.next() {
+            if let Some((value, slot_id)) = page_iter.next() { //value is a vector of bytes
                 // Create the ValueId using current_page_id and slot_id
-                let value_id = ValueId::new(self.current_page_id);  //problem here probably!!
+                let value_id = ValueId::new(self.current_page_id, slot_id);  //problem here probably!!
                 return Some((value, value_id));
             }
         }
+
+        //when we insert a tuple, we need to know which heap file its in, which page its on and which slot its in
+        //we have current page id, 
+        // HeapPage::container_id;
 
         // If the current page is exhausted, try moving to the next page
         self.current_page_id += 1;
