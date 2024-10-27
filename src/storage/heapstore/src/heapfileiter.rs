@@ -68,35 +68,31 @@ impl Iterator for HeapFileIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
 
-        // If there's a current page iterator, try to get the next value
-        if let Some(ref mut page_iter) = self.current_page_iter {
-            if let Some((value, slot_id)) = page_iter.next() { //value is a vector of bytes
-                // Create the ValueId using current_page_id and slot_id
-                let value_id = ValueId::new(self.current_page_id, slot_id);  //problem here probably!!
-                return Some((value, value_id));
+        loop {
+            // If there's a current page iterator, try to get the next value
+            if let Some(ref mut page_iter) = self.current_page_iter {
+                if let Some((value, slot_id)) = page_iter.next() {
+                    
+                    // Create the ValueId using current_page_id and slot_id
+                    let value_id = ValueId::new_slot(self.heapfile.container_id, self.current_page_id, slot_id);
+                    return Some((value, value_id));
+                }
             }
-        }
 
-        //when we insert a tuple, we need to know which heap file its in, which page its on and which slot its in
-        //we have current page id, 
-        // HeapPage::container_id;
+            //when we insert a tuple, we need to know which heap file its in, which page its on and which slot its in
 
-        // If the current page is exhausted, try moving to the next page
-        self.current_page_id += 1;
+            // If current page iterator is exhausted or missing, move to the next page
+            self.current_page_id += 1;
 
-        // Check if we have more pages in the file
-        if self.current_page_id < self.heapfile.num_pages() {
-
-            // Load the next page and create a new iterator for it
-            let next_page = self.heapfile.read_page_from_file(self.current_page_id).unwrap(); // Handle error appropriately
-            self.current_page_iter = Some(next_page.into_iter());
-
-            // Recursively call next to process the new page
-            self.next()
-        
-        } else {
-            // No more pages to iterate over
-            None
+            // Check if we have more pages in the heap file
+            if self.current_page_id < self.heapfile.num_pages() {
+                // Load the next page and create a new iterator for it
+                let next_page = self.heapfile.read_page_from_file(self.current_page_id).ok()?;
+                self.current_page_iter = Some(next_page.into_iter());
+            } else {
+                // No more pages to iterate over
+                return None;
+            }
         }
     }
 }
