@@ -35,6 +35,21 @@ impl HeapFile {
     /// Create a new heapfile for the given path. Return Result<Self> if able to create.
     /// Errors could arise from permissions, space, etc when trying to create the file used by HeapFile.
     pub(crate) fn new(file_path: PathBuf, container_id: ContainerId) -> Result<Self, CrustyError> {
+        println!("{}", file_path.display());
+        println!("{}", container_id);
+
+        // Step 1: Ensure parent directories exist
+        if let Some(parent_dir) = file_path.parent() {
+        std::fs::create_dir_all(parent_dir).map_err(|error| {
+            println!("Failed to create directories: {:?}", error);
+            CrustyError::CrustyError(format!(
+                "Cannot create parent directories for file: {} {:?}",
+                file_path.to_string_lossy(),
+                error
+            ))
+        })?;
+    }
+
         let file = match OpenOptions::new()
             .read(true)
             .write(true)
@@ -43,13 +58,15 @@ impl HeapFile {
         {
             Ok(f) => f,
             Err(error) => {
-                return Err(CrustyError::CrustyError(format!(  //return a CrustyError if file path or page id are invalid
+                return Err(CrustyError::CrustyError(format!(
                     "Cannot open or create heap file: {} {:?}",
                     file_path.to_string_lossy(),
                     error
                 )))
             }
         };
+
+        println!("in new: creating file");
 
         let file = Arc::new(RwLock::new(file)); // thread safe access of file
 

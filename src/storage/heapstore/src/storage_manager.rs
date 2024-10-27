@@ -362,6 +362,8 @@ impl StorageTrait for StorageManager {
     ) -> Result<(), CrustyError> {
 
         let file_path = self.storage_dir.join(format!("container_{}.db", container_id));
+
+        // println!("{}", file_path.display());
         
         let heap_file = HeapFile::new(file_path.clone(), container_id) //create the heapfile
             .map_err(|e| CrustyError::CrustyError(format!("Failed to create HeapFile: {:?}", e)))?;
