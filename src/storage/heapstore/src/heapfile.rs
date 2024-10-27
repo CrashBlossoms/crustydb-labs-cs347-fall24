@@ -35,20 +35,18 @@ impl HeapFile {
     /// Create a new heapfile for the given path. Return Result<Self> if able to create.
     /// Errors could arise from permissions, space, etc when trying to create the file used by HeapFile.
     pub(crate) fn new(file_path: PathBuf, container_id: ContainerId) -> Result<Self, CrustyError> {
-        println!("{}", file_path.display());
-        println!("{}", container_id);
 
-        // Step 1: Ensure parent directories exist
+        //ensure parent directories exist
         if let Some(parent_dir) = file_path.parent() {
-        std::fs::create_dir_all(parent_dir).map_err(|error| {
-            println!("Failed to create directories: {:?}", error);
-            CrustyError::CrustyError(format!(
-                "Cannot create parent directories for file: {} {:?}",
-                file_path.to_string_lossy(),
-                error
-            ))
-        })?;
-    }
+            std::fs::create_dir_all(parent_dir).map_err(|error| {
+                println!("Failed to create directories: {:?}", error);
+                CrustyError::CrustyError(format!(
+                    "Cannot create parent directories for file: {} {:?}",
+                    file_path.to_string_lossy(),
+                    error
+                ))
+            })?;
+        }
 
         let file = match OpenOptions::new()
             .read(true)
@@ -66,8 +64,6 @@ impl HeapFile {
             }
         };
 
-        println!("in new: creating file");
-
         let file = Arc::new(RwLock::new(file)); // thread safe access of file
 
         // return the new HeapFile instance with the file and container_id
@@ -77,8 +73,6 @@ impl HeapFile {
             read_count: Into::into(0),
             write_count: Into::into(0),   
         })
-
-        //add heapfile to cid map here!?
     }
 
     /// Return the number of pages for this HeapFile.
@@ -109,10 +103,10 @@ impl HeapFile {
             self.read_count.fetch_add(1, Ordering::Relaxed);
         }
 
-        // Lock the file for reading
+        //lock the file for reading
         let mut file = self.file.write().unwrap();
 
-        // calculate the offset
+        //calculate the offset
         let offset = (pid as u64) * PAGE_SIZE as u64;
         file.seek(SeekFrom::Start(offset)).map_err(|e| CrustyError::CrustyError(format!("Failed to seek to page position: {:?}", e)))?;
 

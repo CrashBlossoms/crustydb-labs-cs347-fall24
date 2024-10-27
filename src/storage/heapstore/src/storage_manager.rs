@@ -1,4 +1,4 @@
-use crate::heap_page::{self, HeapPage};
+use crate::heap_page::{self, HeapPage, SLOT_SIZE};
 use crate::heapfile::HeapFile;
 use crate::heapfileiter::HeapFileIterator;
 use crate::page::Page;
@@ -63,33 +63,33 @@ impl StorageManager {
         page: &Page,
         _tid: TransactionId,
     ) -> Result<(), CrustyError> {
-        //Lock the RwLock on the cid_heapfile_map to access the HashMap
+        //get the heapfile map
         let heapfile_map = self.cid_heapfile_map.read().unwrap();
 
-        //Look up the heap file in the HashMap using container_id
+        //look up the heap file in the map
         let heap_file = heapfile_map.get(&container_id)
             .ok_or_else(|| CrustyError::CrustyError("HeapFile not found".to_string()))?
-            .clone();  // Clone the Arc<HeapFile> to get shared ownership
+            .clone();
 
-        //Write the page to the heap file using page_id
+        //write the page to the heap file
         heap_file.write_page_to_file(page)
             .map_err(|e| CrustyError::CrustyError(format!("Failed to write page: {:?}", e)))?;
 
-        //Return Ok to indicate success
+        //return Ok to indicate success
         Ok(())
     }
 
     /// Get the number of pages for a container
     fn get_num_pages(&self, container_id: ContainerId) -> PageId {
-        //Lock the RwLock on the cid_heapfile_map to access the HashMap
+        //get the heapfile map
         let heapfile_map = self.cid_heapfile_map.read().unwrap();
 
-        //Look up the heap file in the HashMap using container_id
+        //look up the heap file in the map
         if let Some(heap_file) = heapfile_map.get(&container_id) {
-            //Return the number of pages by calling num_pages on the HeapFile
+            //return the number of pages in this heapfile
             heap_file.num_pages()
         } else {
-            //If the heap file doesn't exist, return 0
+            //if the heap file doesn't exist return 0
             0
         }
     }
@@ -174,7 +174,7 @@ impl StorageTrait for StorageManager {
             let cid_heapfile_map = Arc::new(RwLock::new(HashMap::new()));
             let cid_path_map = Arc::new(RwLock::new(HashMap::new()));
 
-            // Step 2: Construct the new StorageManager with empty mappings
+            //construct the new StorageManager with empty mappings
             StorageManager {
                 storage_dir: storage_dir.to_path_buf(),
                 cid_heapfile_map,
@@ -230,7 +230,7 @@ impl StorageTrait for StorageManager {
             
             let mut page = heap_file.read_page_from_file(page_id).expect("Failed to read page"); //get one page
             
-            if page.get_free_space() >= value.len() { //check if there's enough free space in this page
+            if page.get_free_space() >= value.len() + SLOT_SIZE as usize { //check if there's enough free space in this page
                 
                 //insert the value into the page
                 let slot_id = page.add_value(&value).expect("Failed to insert value");
@@ -239,7 +239,7 @@ impl StorageTrait for StorageManager {
                 heap_file.write_page_to_file(&page).expect("Failed to write page");
 
                 //return the ValueId for the inserted value
-                return ValueId::new_slot(container_id, page_id, slot_id); //possibly a problem!
+                return ValueId::new_slot(container_id, page_id, slot_id);
             }
         }
         //if we get here, we did not find a page with enough space
@@ -331,7 +331,7 @@ impl StorageTrait for StorageManager {
 
         //attempt to add the new value to the page
         if let Some(new_slot_id) = page.add_value(&value) {
-            // Step 6: Write the updated page back to the heap file
+            //write the updated page back to the heapfile
             heap_file.write_page_to_file(&page)
                 .map_err(|_| CrustyError::CrustyError("Failed to write updated page".to_string()))?;
 
@@ -477,23 +477,19 @@ impl StorageTrait for StorageManager {
     /// disk as its just meant to clear state.
     ///
     /// Clear any data structures in the SM you add
-    fn reset(&self) -> Result<(), CrustyError> {
+    fn reset(&self) -> Result<(), CrustyError> { //problem! needs to delete one directory higher as well
+        // println!("{}", self.storage_dir.display());
         fs::remove_dir_all(self.storage_dir.clone())?;
         fs::create_dir_all(self.storage_dir.clone()).unwrap();
         
-        // Step 2: Clear internal data structures
-        // Acquire write locks on cid_heapfile_map and cid_path_map, then clear them
-        {
-            let mut heapfile_map = self.cid_heapfile_map.write().unwrap();
-            heapfile_map.clear();
-        }
+        //clear the maps
+        let mut heapfile_map = self.cid_heapfile_map.write().unwrap();
+        heapfile_map.clear();
+    
+        let mut path_map = self.cid_path_map.write().unwrap();
+        path_map.clear();
 
-        {
-            let mut path_map = self.cid_path_map.write().unwrap();
-            path_map.clear();
-        }
-
-        // Return Ok to indicate reset was successful
+        //return Ok to indicate reset was successful
         Ok(())
     }
 

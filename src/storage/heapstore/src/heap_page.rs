@@ -80,7 +80,7 @@ impl HeapPage for Page {
                 return None; // not enough space for a new slot and the value
             }
 
-            // Increment the number of slots
+            // increment the number of slots
             let new_num_slots = num_slots + 1;
             self.update_slot_counter(new_num_slots as u16);
 
