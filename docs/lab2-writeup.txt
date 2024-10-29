@@ -1,0 +1,10 @@
+In building the Storage Manager, I used the provided container map and container path map to keep references to heapfile's pointers and file paths.
+Upon startup, the system checks for a configuration file and, if one exists, initializes the container map and path map to the values specified in 
+the file. This allows us to maintain references to the heapfiles after a restart. If no configuration file exists, we simply create a new 
+StorageManager with empty maps. Functions like insert_value, delete_value, and update_value first lookup the heapfile that contains the tuple
+in the container map. Once that is found, we look for the page within it that contains the tuple. Once we find the page, we find the slot pointing to
+the tuple and do whatever work we need to do with the data. In the case of update_value, we check if the page has enough space to hold the new value
+(as it could be longer than the current). If there is enough space, we delete the old value and write the new one, storing its offset in whatever slot
+we find available. To make accessing all the pages of a heapfile easier, the heap file iterator allows us to, one by one, access every page in a file.
+We are able to begin from the beginning of the file or from a given position in the file (using new_from). The iterator uses current_page_id and 
+current_page_iter to track its position as it moves through the file.

@@ -170,7 +170,7 @@ impl StorageTrait for StorageManager {
         } else {
             debug!("Making new storage_manager in directory {:?}", storage_dir);
 
-            //Create empty ContainerMap and ContainerPathMap
+            //create empty ContainerMap and ContainerPathMap
             let cid_heapfile_map = Arc::new(RwLock::new(HashMap::new()));
             let cid_path_map = Arc::new(RwLock::new(HashMap::new()));
 
@@ -190,11 +190,11 @@ impl StorageTrait for StorageManager {
         let storage_dir = gen_random_test_sm_dir();
         debug!("Making new temp storage_manager {:?}", storage_dir);
 
-        //Create empty ContainerMap and ContainerPathMap
+        //create empty ContainerMap and ContainerPathMap
         let cid_heapfile_map = Arc::new(RwLock::new(HashMap::new()));
         let cid_path_map = Arc::new(RwLock::new(HashMap::new()));
 
-        //Construct and return the StorageManager with is_temp set to true
+        //construct and return the StorageManager with is_temp set to true
         StorageManager {
             storage_dir,
             cid_heapfile_map,
@@ -222,7 +222,7 @@ impl StorageTrait for StorageManager {
 
         let heap_file = heapfile_map.get(&container_id) //find heapfile we want
             .expect("HeapFile not found")
-            .clone();  // Clone the Arc<HeapFile>
+            .clone();
 
         let num_pages = heap_file.num_pages();
         
@@ -244,10 +244,6 @@ impl StorageTrait for StorageManager {
         }
         //if we get here, we did not find a page with enough space
 
-
-        //when we insert a tuple, we need to know which heap file its in, which page its on and which slot its in
-
-        //POSSIBLE ISSUE - NOT INCREMENTING NUM PAGES IN NEW FILE, MIGHT BE TAKEN CARE OF AUTOMATICALLY
         let new_page_id = num_pages;  //assign the new page_id to the next available page
         let mut new_page = Page::new(new_page_id);
 
