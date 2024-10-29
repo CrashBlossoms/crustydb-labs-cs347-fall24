@@ -31,15 +31,11 @@ crate. The files that you need to modify are:
 
 Please see the [handout instructions](docs/lab2-heapfile.md) for more information.
 
-## Lab 3 - Query Operator Milestone
-Complete the implementation of the query operators in the `src/queryexe/src/opiterator`
-crate. The files that you need to modify are:
+## Lab 3 - Query Operators
+Check the [handout instructions](docs/lab3-operators.md) for more information.
 
-- `src/queryexe/src/opiterator/nested_loop_join.rs`
-- `src/queryexe/src/opiterator/hash_join.rs`
-- `src/queryexe/src/opiterator/aggregate.rs`
-
-Please see your handout instructions for more information.
+## Bonus Lab - Sort Merge Join
+Check the [handout instructions](docs/bonus-lab-sort-merge-join.md) for more information.
 
 ## Running and Testing CrustyDB End-to-End
 

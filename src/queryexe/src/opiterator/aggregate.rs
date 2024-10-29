@@ -24,6 +24,7 @@ pub struct Aggregate {
     child: Box<dyn OpIterator>,
     /// If true, then the operator will be rewinded in the future.
     will_rewind: bool,
+    
     // States (Need to reset on close)
     // todo!("Your code here")
 }
@@ -38,12 +39,32 @@ impl Aggregate {
         child: Box<dyn OpIterator>,
     ) -> Self {
         assert!(ops.len() == agg_expr.len());
-
         todo!("Your code here")
     }
 
+    fn merge_fields(op: AggOp, field_val: &Field, acc: &mut Field) -> Result<(), CrustyError> {
+        match op {
+            AggOp::Count => *acc = (acc.clone() + Field::Int(1))?,
+            AggOp::Max => {
+                let max = max(acc.clone(), field_val.clone());
+                *acc = max;
+            }
+            AggOp::Min => {
+                let min = min(acc.clone(), field_val.clone());
+                *acc = min;
+            }
+            AggOp::Sum => {
+                *acc = (acc.clone() + field_val.clone())?;
+            }
+            AggOp::Avg => {
+                *acc = (acc.clone() + field_val.clone())?; // This will be divided by the count later
+            }
+        }
+        Ok(())
+    }
+
     pub fn merge_tuple_into_group(&mut self, tuple: &Tuple) {
-        todo!("Your code here")
+        todo!("Your code here");
     }
 }
 
