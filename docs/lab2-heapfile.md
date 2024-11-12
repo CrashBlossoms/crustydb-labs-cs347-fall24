@@ -1,6 +1,12 @@
 _Due Date: Tuesday, October 29th, 2024 at 11:59 am (Noon)_
 
-In this lab you will continue building a storage manager that uses
+Important! I have updated the following files. Please make sure to use the up-to-date files in this repo:
+
+- `src/common/src/testutil.rs`
+- `src/storage/heapstore/src/heapfile.rs`
+- `src/storage/heapstore/src/storage_manager.rs`
+
+In this lab, you will continue building a storage manager that uses
 heapfiles to store values/data. As a reminder, in CrustyDB the storage manager
 (a.k.a the **SM**) is responsible for persisting all data to disk. An SM in
 Crusty is agnostic to what is being stored, as it takes a request to store a
