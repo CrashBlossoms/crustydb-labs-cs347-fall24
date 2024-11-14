@@ -12,10 +12,15 @@ pub struct NestedLoopJoin {
     left_expr: ByteCodeExpr,
     right_expr: ByteCodeExpr,
     left_child: Box<dyn OpIterator>,
-    right_child: Box<dyn OpIterator>
+    right_child: Box<dyn OpIterator>,
 
     // TODO: Add any other fields that you need to
     // maintain operator state here
+
+    // State management fields
+    current_left_tuple: Option<Tuple>,    // Holds the current tuple from the left child
+    right_child_reset: bool,              // Flag to reset the right child for each new left tuple
+    right_child_done: bool,               // Flag to indicate if right child is done for current left
 
 }
 
@@ -37,7 +42,18 @@ impl NestedLoopJoin {
         right_child: Box<dyn OpIterator>,
         schema: TableSchema,
     ) -> Self {
-        todo!("Your code here")
+        Self {
+            schema,
+            op,
+            left_expr,
+            right_expr,
+            left_child,
+            right_child,
+            current_left_tuple: None,
+            right_child_reset: true,
+            right_child_done: false,
+        }
+        // todo!("Your code here")
     }
 }
 
@@ -48,20 +64,83 @@ impl OpIterator for NestedLoopJoin {
     }
 
     fn open(&mut self) -> Result<(), CrustyError> {
-        todo!("Your code here")
+        // Reset state fields
+        self.current_left_tuple = None;
+        self.right_child_reset = true;
+        self.right_child_done = false;
+
+        // Open both left and right child iterators
+        self.left_child.open()?;
+        self.right_child.open()?;
+
+        // Advance to the first tuple in the left relation
+        self.current_left_tuple = self.left_child.next()?;
+
+        Ok(())
+        //todo
     }
 
     /// Calculates the next tuple for a nested loop join.
     fn next(&mut self) -> Result<Option<Tuple>, CrustyError> {
-        todo!("Your code here")
+
+        if self.current_left_tuple == None { //may not be correct
+            panic!()
+        }
+
+        // Outer loop: Iterate through left tuples
+        while let Some(ref left_tuple) = self.current_left_tuple {
+            
+            // Inner loop: Iterate through right tuples
+            while let Some(right_tuple) = self.right_child.next()? {
+                
+                // Evaluate left and right expressions
+                let left_value = self.left_expr.eval(left_tuple);
+                let right_value = self.right_expr.eval(&right_tuple);
+
+                // Apply the join condition using the specified operation
+                if compare_fields(self.op, &left_value, &right_value) {
+
+                    // Concatenate or join the tuples and return the result
+                    let joined_tuple = left_tuple.merge(&right_tuple);
+                    return Ok(Some(joined_tuple));
+                }
+            }
+
+            // Reset the right iterator and advance to the next tuple in the left iterator
+            self.right_child.rewind()?;
+            self.current_left_tuple = self.left_child.next()?;
+        }
+
+        // No more tuples to join
+        Ok(None)
     }
 
     fn close(&mut self) -> Result<(), CrustyError> {
-        todo!("Your code here")
+        // Close both child iterators
+        self.left_child.close()?;
+        self.right_child.close()?;
+
+        // Reset internal state fields
+        self.current_left_tuple = None;
+        self.right_child_reset = true;
+        self.right_child_done = false;
+
+        Ok(())
+        //todo
     }
 
     fn rewind(&mut self) -> Result<(), CrustyError> {
-        todo!("Your code here")
+        // Rewind both child iterators to start from the beginning
+        self.left_child.rewind()?;
+        self.right_child.rewind()?;
+    
+        // Reinitialize state
+        self.current_left_tuple = self.left_child.next()?;
+        self.right_child_reset = true;
+        self.right_child_done = false;
+    
+        Ok(())
+        //todo
     }
 
     /// return schema of the result
