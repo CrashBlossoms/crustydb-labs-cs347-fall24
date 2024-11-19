@@ -28,11 +28,10 @@ pub struct Aggregate {
     
     // States (Need to reset on close)
     // todo!("Your code here")
-    // Aggregation state
-    agg_results: HashMap<Vec<Field>, Vec<Field>>, // Maps group keys to aggregate values
-    count_map: HashMap<Vec<Field>, usize>,        // Tracks counts for avg operations
-    result_tuples: Vec<Tuple>,                    // Stores finalized aggregation results
-    result_index: usize,                          // Index to track position in result_tuples for iteration
+    agg_results: HashMap<Vec<Field>, Vec<Field>>, 
+    count_map: HashMap<Vec<Field>, usize>,        
+    result_tuples: Vec<Tuple>,                    
+    result_index: usize,                          
     is_open: bool
 }
 
@@ -96,25 +95,25 @@ impl Aggregate {
 
     pub fn merge_tuple_into_group(&mut self, tuple: &Tuple) -> Result<(), CrustyError> {
 
-        // Step 1: Calculate the group key by evaluating group-by expressions
+        //calculate the group key
         let group_key: Vec<Field> = self
             .groupby_expr
             .iter()
             .map(|expr| expr.eval(tuple))
             .collect();
     
-        // Step 2: Initialize aggregation entry if the group key is new
+        //initialize aggregation entry if the group key is new
         if !self.agg_results.contains_key(&group_key) {
             
-            // Initialize aggregation vector with default values (e.g., 0 for Sum, Min, etc.)
+            //initialize aggregation vector with default values
             let initial_agg_values = self
                 .ops
                 .iter()
                 .map(|op| match op {
                     AggOp::Count => Field::Int(0),
-                    AggOp::Sum | AggOp::Avg => Field::Int(0), // Use 0 initially for Sum and Avg
-                    AggOp::Min => Field::Null,       // Initialize Min to max possible value
-                    AggOp::Max => Field::Null,       // Initialize Max to min possible value
+                    AggOp::Sum | AggOp::Avg => Field::Int(0), // use 0 initially for Sum and Avg
+                    AggOp::Min => Field::Null,       // initialize Min to max possible value
+                    AggOp::Max => Field::Null,       // initialize Max to min possible value
                 })
                 .collect();
     
@@ -122,18 +121,18 @@ impl Aggregate {
             self.count_map.insert(group_key.clone(), 0);
         }
     
-        // Step 3: For each aggregation operation, update the corresponding field in agg_results
+        //for each operation, update the corresponding field in agg_results
         let agg_values = self.agg_results.get_mut(&group_key).unwrap(); //problem originates around here! agg_values is wrong
 
         for (i, op) in self.ops.iter().enumerate() {
 
             let field_val = self.agg_expr[i].eval(tuple);
 
-            // Merge field value into aggregate using the specified operation
+            //merge field value into aggregate using the specified operation
             Self::merge_fields(*op, &field_val, &mut agg_values[i])?;
         }
     
-        // Step 4: Update count for Avg operations
+        //update count for Avg operations
         if self.ops.contains(&AggOp::Avg) {
             *self.count_map.get_mut(&group_key).unwrap() += 1;
         }
@@ -161,13 +160,13 @@ impl OpIterator for Aggregate {
             self.merge_tuple_into_group(&tuple)?;
         }
     
-        // Finalize the aggregated results
+        //finalize the aggregated results
         self.result_tuples.clear();
         for (group_key, agg_values) in &self.agg_results {
-            let mut final_tuple = group_key.clone(); // Start with group-by fields
+            let mut final_tuple = group_key.clone(); //start with group-by fields
     
             for (i, field) in agg_values.iter().enumerate() {
-                // Finalize average calculation if required
+                //finalize average calculation if required
                 let final_field = if self.ops[i] == AggOp::Avg { //final field is incorrect!! could be a string!!
 
                     let count = *self.count_map.get(group_key).unwrap_or(&1) as i64;
@@ -184,15 +183,11 @@ impl OpIterator for Aggregate {
                 final_tuple.push(final_field);
             }
 
-            //final tuple is vec of fields
-            //we need to turn this into a tuple
-
-            //Tuple can be created from a vec of Fields
-
+            //add the final tuple
             self.result_tuples.push(Tuple::new(final_tuple));
         }
     
-        // Reset result index for iteration
+        //reset result index for iteration
         self.result_index = 0;
         self.is_open = true;
     
@@ -202,19 +197,20 @@ impl OpIterator for Aggregate {
 
     fn next(&mut self) -> Result<Option<Tuple>, CrustyError> {
 
+        //if not open, we cannot call next
         if !self.is_open {
             panic!("Cannot call `next` before `open`.");
         }
         
-        // Check if there are more tuples to return
+        //check if there are more tuples to return
         if self.result_index < self.result_tuples.len() {
-            // Get the next tuple and increment the index
+            //get the next tuple and increment the index
             let next_tuple = self.result_tuples[self.result_index].clone();
             self.result_index += 1;
 
             Ok(Some(next_tuple)) //next gives a vector of tuples
         } else {
-            // No more tuples to return
+            //no more tuples to return
             Ok(None)
         }
         //todo
@@ -222,10 +218,10 @@ impl OpIterator for Aggregate {
 
     fn close(&mut self) -> Result<(), CrustyError> {
         
-        // Close the child operator
+        //close the child operator
         self.child.close()?;
     
-        // Clear aggregation state
+        //clear aggregation state
         self.agg_results.clear();
         self.count_map.clear();
         self.result_tuples.clear();
@@ -241,7 +237,6 @@ impl OpIterator for Aggregate {
             panic!("Cannot call `rewind` before `open`.");
         }
     
-        // Logic for rewinding
         self.result_index = 0;
         Ok(())
     }

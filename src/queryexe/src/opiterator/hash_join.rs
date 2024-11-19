@@ -45,11 +45,11 @@ impl HashEqJoin {
             right_expr,
             left_child,
             right_child,
-            hash_table: HashMap::new(), // Initialize an empty hash table
-            right_buffer: None,        // No tuple loaded from right child yet
-            output_buffer: Vec::new(), // Empty buffer for output tuples
+            hash_table: HashMap::new(),
+            right_buffer: None,        
+            output_buffer: Vec::new(), 
             schema,
-            managers,                    // The schema of the result
+            managers,                  
         }
     }
 }
@@ -62,41 +62,39 @@ impl OpIterator for HashEqJoin {
 
     fn open(&mut self) -> Result<(), CrustyError> {
 
-        println!("OPENING");
-        self.left_child.configure(true);  // Ensure left_child supports rewinding
+        //enable rewinding for both children
+        self.left_child.configure(true);
         self.right_child.configure(true);
 
-        // Open the child operators
+        //open the child operators
         self.left_child.open()?;
         self.right_child.open()?;
     
-        // Clear any previous state in the hash table
+        //clear previous state in the has table
         self.hash_table.clear();
     
-        // Build the hash table from the left child
+        //build the hash table from the left child
         while let Some(left_tuple) = self.left_child.next()? {
-            println!("left tuple is: {}", left_tuple);
-            // Evaluate the join key for the left tuple
+            
+            //evaluate the join key for the left tuple
             let left_key = self.left_expr.eval(&left_tuple);
     
-            // Insert the tuple into the hash table under the corresponding key
+            //insert the tuple into the hash table under the corresponding key
             self.hash_table
                 .entry(left_key)
                 .or_insert_with(Vec::new)
                 .push(left_tuple);
         }
     
-        // Reset the output buffer and right buffer
+        //reset the output buffer and right buffer
         self.output_buffer.clear();
         self.right_buffer = None;
     
         Ok(())
-        //todo
     }
 
     fn next(&mut self) -> Result<Option<Tuple>, CrustyError> { //problem here!
-        println!("NEXT!");
-        // Step 1: Check if there are results in the output buffer
+        //check if there are results in the output buffer
         if !self.output_buffer.is_empty() {
             return Ok(Some(self.output_buffer.remove(0)));
         }
@@ -119,19 +117,15 @@ impl OpIterator for HashEqJoin {
                     joined_tuple.field_vals.extend(right_tuple.field_vals.clone());
                     self.output_buffer.push(joined_tuple);
                 }
-
-                println!("IN OPEN, OUTPUT BUFFER HOLDS: {:?}", self.output_buffer);
     
-                // Step 6: Return the first tuple from the output buffer
+                //return the first tuple from the output buffer
                 if !self.output_buffer.is_empty() { //get one tuple from buffer and remove it
                     return Ok(Some(self.output_buffer.remove(0)));
                 }
-            } else {
-                println!("found nothing in hash table for right key")
             }
         }
     
-        // Step 7: If no more tuples, return None
+        //if no more tuples, return None
         Ok(None)
     }
 
@@ -149,43 +143,21 @@ impl OpIterator for HashEqJoin {
     }
     
     fn rewind(&mut self) -> Result<(), CrustyError> {
-        // println!("Marker 0");
-        // Rewind both child operators
-        let _ = self.left_child.rewind();
-        // println!("Marker 1");
 
-        let _ = self.right_child.rewind(); //here
-
-        // println!("Marker 2");
+        //rewind both child operators
+        self.left_child.rewind()?;
+        self.right_child.rewind()?;
     
-        // Clear and rebuild the hash table
+        //clear and rebuild the hash table
         self.hash_table.clear();
 
-        // println!("Marker 2");
-        
-        // while let Some(left_tuple) = self.left_child.next()? {
-        //     let left_key = self.left_expr.eval(&left_tuple);
-        //     self.hash_table
-        //         .entry(left_key)
-        //         .or_insert_with(Vec::new)
-        //         .push(left_tuple);
-        // }
-
-        // println!("Marker 3"); 
-
-        //keep calling next here to get all tuples
-        //get vector of tuples
-
-        // Reset buffers
-        // println!("OUTPUT BUFFER HOLDS: {:?}", self.output_buffer);
+        //reset buffers
         self.output_buffer.clear();
         self.right_buffer = None;
     
         Ok(())
-        // Some(self.output_buffer.unwrap())
     }
     
-
     fn get_schema(&self) -> &TableSchema {
         &self.schema
     }
@@ -232,11 +204,11 @@ mod test {
             setup.schema.clone(),
             left_expr,
             right_expr,
-            Box::new(TupleIterator::new( //left child is TupleIterator
+            Box::new(TupleIterator::new(
                 setup.tuples.clone(),
                 setup.schema.clone(),
             )),
-            Box::new(TupleIterator::new( //right child is TupleIterator
+            Box::new(TupleIterator::new(
                 setup.tuples.clone(),
                 setup.schema.clone(),
             )),
