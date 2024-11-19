@@ -70,6 +70,7 @@ impl OpIterator for TupleIterator {
 
     /// Opens the iterator without returning a tuple.
     fn open(&mut self) -> Result<(), CrustyError> {
+        println!("opening TupleIterator");
         if !self.open {
             self.open = true;
         }
@@ -87,6 +88,7 @@ impl OpIterator for TupleIterator {
         }
         if self.will_rewind {
             // do not consume the iterator
+            println!("index is: {}", self.index);
             if self.index == 0 {
                 Ok(None)
             } else {
@@ -107,12 +109,14 @@ impl OpIterator for TupleIterator {
     }
 
     fn rewind(&mut self) -> Result<(), CrustyError> {
+        println!("rewinding TupleIterator");
         if !self.open {
             panic!("Operator has not been opened")
         }
         if !self.will_rewind {
             panic!("Cannot rewind a TupleIterator with will_rewind set to false")
         }
+        println!("did not panic in TupleIterator");
         self.index = self.tuples.len();
         Ok(())
     }
