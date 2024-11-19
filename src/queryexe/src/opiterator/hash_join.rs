@@ -18,7 +18,6 @@ pub struct HashEqJoin {
     right_child: Box<dyn OpIterator>,
     // States (Need to reset on close)
     // todo!("Your code here")
-
     hash_table: HashMap<Field, Vec<Tuple>>, // Maps left join keys to tuples
     right_buffer: Option<Tuple>,           // Current tuple from the right child
     output_buffer: Vec<Tuple>,             // Tuples to output from the join
@@ -34,11 +33,12 @@ impl HashEqJoin {
     /// * `left_child` - Left child of join operator.
     /// * `right_child` - Left child of join operator.
     pub fn new(
+        managers: &'static Managers,
+        schema: TableSchema,
         left_expr: ByteCodeExpr,
         right_expr: ByteCodeExpr,
         left_child: Box<dyn OpIterator>,
         right_child: Box<dyn OpIterator>,
-        schema: TableSchema,
     ) -> Self {
         HashEqJoin {
             left_expr,
@@ -49,7 +49,7 @@ impl HashEqJoin {
             right_buffer: None,        // No tuple loaded from right child yet
             output_buffer: Vec::new(), // Empty buffer for output tuples
             schema,
-            // managers: todo!(),                    // The schema of the result
+            managers,                    // The schema of the result
         }
     }
 }
@@ -61,6 +61,10 @@ impl OpIterator for HashEqJoin {
     }
 
     fn open(&mut self) -> Result<(), CrustyError> {
+
+        self.left_child.configure(true);  // Ensure left_child supports rewinding
+        self.right_child.configure(false);
+
         // Open the child operators
         self.left_child.open()?;
         self.right_child.open()?;
@@ -87,7 +91,6 @@ impl OpIterator for HashEqJoin {
         Ok(())
         //todo
     }
-    
 
     fn next(&mut self) -> Result<Option<Tuple>, CrustyError> {
         // Step 1: Check if there are results in the output buffer
@@ -108,7 +111,7 @@ impl OpIterator for HashEqJoin {
                 // Step 5: Combine the right tuple with all matching left tuples
                 for left_tuple in left_tuples {
                     let mut joined_tuple = left_tuple.clone();
-                    joined_tuple.field_vals.extend(right_tuple.field_vals);
+                    joined_tuple.field_vals.extend(right_tuple.field_vals.clone());
                     self.output_buffer.push(joined_tuple);
                 }
     
@@ -122,15 +125,55 @@ impl OpIterator for HashEqJoin {
         // Step 7: If no more tuples, return None
         Ok(None)
     }
-    
 
     fn close(&mut self) -> Result<(), CrustyError> {
-        todo!("Your code here")
+        // Close both child operators
+        self.left_child.close()?;
+        self.right_child.close()?;
+    
+        // Clear internal state
+        self.hash_table.clear();
+        self.output_buffer.clear();
+        self.right_buffer = None;
+    
+        Ok(())
     }
-
+    
     fn rewind(&mut self) -> Result<(), CrustyError> {
-        todo!("Your code here")
+        println!("Marker 0");
+        // Rewind both child operators
+        self.left_child.rewind()?;
+        println!("Marker 1");
+
+        self.right_child.rewind()?; //here
+
+        println!("Marker 2");
+    
+        // Clear and rebuild the hash table
+        self.hash_table.clear();
+
+        // println!("Marker 2");
+        
+        while let Some(left_tuple) = self.left_child.next()? {
+            let left_key = self.left_expr.eval(&left_tuple);
+            self.hash_table
+                .entry(left_key)
+                .or_insert_with(Vec::new)
+                .push(left_tuple);
+        }
+
+        println!("Marker 3"); 
+
+        //keep calling next here to get all tuples
+        //get vector of tuples
+
+        // Reset buffers
+        self.output_buffer.clear();
+        self.right_buffer = None;
+    
+        Ok(())
     }
+    
 
     fn get_schema(&self) -> &TableSchema {
         &self.schema
@@ -316,7 +359,7 @@ mod test {
         }
 
         #[test]
-        fn test_rewind() {
+        fn test_rewind() { //fails
             let (left_expr, right_expr) = get_join_predicate();
             let mut iter = get_iter(left_expr, right_expr);
             iter.configure(true);
