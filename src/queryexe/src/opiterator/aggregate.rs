@@ -33,6 +33,7 @@ pub struct Aggregate {
     count_map: HashMap<Vec<Field>, usize>,        // Tracks counts for avg operations
     result_tuples: Vec<Tuple>,                    // Stores finalized aggregation results
     result_index: usize,                          // Index to track position in result_tuples for iteration
+    is_open: bool
 }
 
 impl Aggregate {
@@ -58,21 +59,17 @@ impl Aggregate {
             count_map: HashMap::new(),
             result_tuples: Vec::new(),
             result_index: 0,
+            is_open: false
         }
     }
 
     //Self::merge_fields(*op, &field_val, &mut agg_values[i])?;
     fn merge_fields(op: AggOp, field_val: &Field, acc: &mut Field) -> Result<(), CrustyError> {
-        // println!("op is: {}", op);
         match op {
             AggOp::Count => *acc = (acc.clone() + Field::Int(1))?,
             AggOp::Max => {
-
                 let the_max;
-                println!("field is: {}", field_val);
-                println!("acc is: {}", acc);
-                println!("field val size is: {}", field_val);
-                
+
                 if acc.size() == 1 { //if acc is null, use field val
                     the_max = field_val.clone();
                 } else if field_val.size() == 1 { //if field val is null, use acc
@@ -80,7 +77,6 @@ impl Aggregate {
                 } else {  //if niether are null, figure out max of two
                     the_max = max(acc.clone(), field_val.clone());
                 }
-                println!("max of two is: {}", the_max);
                 *acc = the_max;
             }
             AggOp::Min => {
@@ -132,15 +128,10 @@ impl Aggregate {
         for (i, op) in self.ops.iter().enumerate() {
 
             let field_val = self.agg_expr[i].eval(tuple);
-            // println!("CURRENT field val is {}", &field_val);
-            // println!("CURRENT agg value is {}", &mut agg_values[i]); //agg_values[i] has max value
-            // println!("CURRENT op is {}", op);
 
             // Merge field value into aggregate using the specified operation
             Self::merge_fields(*op, &field_val, &mut agg_values[i])?;
         }
-
-        // println!("agg_values is {:?}", agg_values);
     
         // Step 4: Update count for Avg operations
         if self.ops.contains(&AggOp::Avg) {
@@ -177,8 +168,6 @@ impl OpIterator for Aggregate {
     
             for (i, field) in agg_values.iter().enumerate() {
                 // Finalize average calculation if required
-                // println!("FIELD IS: {}", field);
-                // println!("PRINTING OP {}", self.ops[i]);
                 let final_field = if self.ops[i] == AggOp::Avg { //final field is incorrect!! could be a string!!
 
                     let count = *self.count_map.get(group_key).unwrap_or(&1) as i64;
@@ -190,26 +179,22 @@ impl OpIterator for Aggregate {
                     }
                 
                 } else {
-                    // println!("final field is not avg");
-                    
                     field.clone()
                 };
-                // println!("field is: {}", final_field);
                 final_tuple.push(final_field);
             }
-            // println!("PRINTING IN OPEN {:?}", final_tuple);
-            // Field::to_bytes(&final_tuple); 
 
             //final tuple is vec of fields
             //we need to turn this into a tuple
 
             //Tuple can be created from a vec of Fields
 
-            self.result_tuples.push(Tuple::new(final_tuple)); // Convert Vec<Field> to Tuple  COULD BE AN ISSUE
+            self.result_tuples.push(Tuple::new(final_tuple));
         }
     
         // Reset result index for iteration
         self.result_index = 0;
+        self.is_open = true;
     
         Ok(())
     }
@@ -217,16 +202,15 @@ impl OpIterator for Aggregate {
 
     fn next(&mut self) -> Result<Option<Tuple>, CrustyError> {
 
-        // if self.child == None {
-        //     panic!()
-        // }
+        if !self.is_open {
+            panic!("Cannot call `next` before `open`.");
+        }
         
         // Check if there are more tuples to return
         if self.result_index < self.result_tuples.len() {
             // Get the next tuple and increment the index
             let next_tuple = self.result_tuples[self.result_index].clone();
             self.result_index += 1;
-            println!("PRINTING IN NEXT() {}", next_tuple);
 
             Ok(Some(next_tuple)) //next gives a vector of tuples
         } else {
@@ -246,14 +230,20 @@ impl OpIterator for Aggregate {
         self.count_map.clear();
         self.result_tuples.clear();
         self.result_index = 0;
+
+        self.is_open = false;
     
         Ok(())
     }
 
     fn rewind(&mut self) -> Result<(), CrustyError> {
-        //close the current state and reopen
-        self.close()?;
-        self.open()
+        if !self.is_open {
+            panic!("Cannot call `rewind` before `open`.");
+        }
+    
+        // Logic for rewinding
+        self.result_index = 0;
+        Ok(())
     }
 
     fn get_schema(&self) -> &TableSchema {
