@@ -18,6 +18,10 @@ pub struct HashEqJoin {
     right_child: Box<dyn OpIterator>,
     // States (Need to reset on close)
     // todo!("Your code here")
+
+    hash_table: HashMap<Field, Vec<Tuple>>, // Maps left join keys to tuples
+    right_buffer: Option<Tuple>,           // Current tuple from the right child
+    output_buffer: Vec<Tuple>,             // Tuples to output from the join
 }
 
 impl HashEqJoin {
@@ -30,14 +34,23 @@ impl HashEqJoin {
     /// * `left_child` - Left child of join operator.
     /// * `right_child` - Left child of join operator.
     pub fn new(
-        managers: &'static Managers,
-        schema: TableSchema,
         left_expr: ByteCodeExpr,
         right_expr: ByteCodeExpr,
         left_child: Box<dyn OpIterator>,
         right_child: Box<dyn OpIterator>,
+        schema: TableSchema,
     ) -> Self {
-        todo!("Your code here")
+        HashEqJoin {
+            left_expr,
+            right_expr,
+            left_child,
+            right_child,
+            hash_table: HashMap::new(), // Initialize an empty hash table
+            right_buffer: None,        // No tuple loaded from right child yet
+            output_buffer: Vec::new(), // Empty buffer for output tuples
+            schema,
+            // managers: todo!(),                    // The schema of the result
+        }
     }
 }
 
@@ -48,12 +61,68 @@ impl OpIterator for HashEqJoin {
     }
 
     fn open(&mut self) -> Result<(), CrustyError> {
-        todo!("Your code here")
+        // Open the child operators
+        self.left_child.open()?;
+        self.right_child.open()?;
+    
+        // Clear any previous state in the hash table
+        self.hash_table.clear();
+    
+        // Build the hash table from the left child
+        while let Some(left_tuple) = self.left_child.next()? {
+            // Evaluate the join key for the left tuple
+            let left_key = self.left_expr.eval(&left_tuple);
+    
+            // Insert the tuple into the hash table under the corresponding key
+            self.hash_table
+                .entry(left_key)
+                .or_insert_with(Vec::new)
+                .push(left_tuple);
+        }
+    
+        // Reset the output buffer and right buffer
+        self.output_buffer.clear();
+        self.right_buffer = None;
+    
+        Ok(())
+        //todo
     }
+    
 
     fn next(&mut self) -> Result<Option<Tuple>, CrustyError> {
-        todo!("Your code here")
+        // Step 1: Check if there are results in the output buffer
+        if !self.output_buffer.is_empty() {
+            return Ok(Some(self.output_buffer.remove(0)));
+        }
+    
+        // Step 2: Fetch the next tuple from the right child
+        while let Some(right_tuple) = self.right_child.next()? {
+            // Store the current right tuple in the buffer
+            self.right_buffer = Some(right_tuple.clone());
+    
+            // Step 3: Evaluate the join key for the right tuple
+            let right_key = self.right_expr.eval(&right_tuple);
+    
+            // Step 4: Probe the hash table for matching tuples
+            if let Some(left_tuples) = self.hash_table.get(&right_key) {
+                // Step 5: Combine the right tuple with all matching left tuples
+                for left_tuple in left_tuples {
+                    let mut joined_tuple = left_tuple.clone();
+                    joined_tuple.field_vals.extend(right_tuple.field_vals);
+                    self.output_buffer.push(joined_tuple);
+                }
+    
+                // Step 6: Return the first tuple from the output buffer
+                if !self.output_buffer.is_empty() {
+                    return Ok(Some(self.output_buffer.remove(0)));
+                }
+            }
+        }
+    
+        // Step 7: If no more tuples, return None
+        Ok(None)
     }
+    
 
     fn close(&mut self) -> Result<(), CrustyError> {
         todo!("Your code here")
