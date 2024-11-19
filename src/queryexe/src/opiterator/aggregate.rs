@@ -63,20 +63,35 @@ impl Aggregate {
 
     //Self::merge_fields(*op, &field_val, &mut agg_values[i])?;
     fn merge_fields(op: AggOp, field_val: &Field, acc: &mut Field) -> Result<(), CrustyError> {
+        // println!("op is: {}", op);
         match op {
             AggOp::Count => *acc = (acc.clone() + Field::Int(1))?,
             AggOp::Max => {
-                let max = max(acc.clone(), field_val.clone());
-                *acc = max;
+
+                let the_max;
+                println!("field is: {}", field_val);
+                println!("acc is: {}", acc);
+                println!("field val size is: {}", field_val);
+                
+                if acc.size() == 1 { //if acc is null, use field val
+                    the_max = field_val.clone();
+                } else if field_val.size() == 1 { //if field val is null, use acc
+                    the_max = acc.clone();
+                } else {  //if niether are null, figure out max of two
+                    the_max = max(acc.clone(), field_val.clone());
+                }
+                println!("max of two is: {}", the_max);
+                *acc = the_max;
             }
             AggOp::Min => {
                 let min = min(acc.clone(), field_val.clone());
-                *acc = min; //maybe use an IF statement here?
+                *acc = min;
             }
             AggOp::Sum => {
                 *acc = (acc.clone() + field_val.clone())?;
             }
             AggOp::Avg => {
+
                 *acc = (acc.clone() + field_val.clone())?; // This will be divided by the count later
             }
         }
@@ -118,13 +133,14 @@ impl Aggregate {
 
             let field_val = self.agg_expr[i].eval(tuple);
             // println!("CURRENT field val is {}", &field_val);
-            // println!("CURRENT field val is {}", &mut agg_values[i]); //agg_values[i] has max value
+            // println!("CURRENT agg value is {}", &mut agg_values[i]); //agg_values[i] has max value
+            // println!("CURRENT op is {}", op);
 
             // Merge field value into aggregate using the specified operation
             Self::merge_fields(*op, &field_val, &mut agg_values[i])?;
         }
 
-        println!("agg_values is {:?}", agg_values);
+        // println!("agg_values is {:?}", agg_values);
     
         // Step 4: Update count for Avg operations
         if self.ops.contains(&AggOp::Avg) {
@@ -160,22 +176,25 @@ impl OpIterator for Aggregate {
             let mut final_tuple = group_key.clone(); // Start with group-by fields
     
             for (i, field) in agg_values.iter().enumerate() {
-                
                 // Finalize average calculation if required
-                println!("PRINTING OP {}", self.ops[i]);
+                // println!("FIELD IS: {}", field);
+                // println!("PRINTING OP {}", self.ops[i]);
                 let final_field = if self.ops[i] == AggOp::Avg { //final field is incorrect!! could be a string!!
+
                     let count = *self.count_map.get(group_key).unwrap_or(&1) as i64;
+                    
                     if let Field::Int(sum) = field {
-                        Field::Int(sum / count)
+                        Field::Decimal((sum * 10000 / count), 4) //make 10,000 into a constant
                     } else {
                         return Err(CrustyError::CrustyError("Expected Int field for Avg".to_string()));
                     }
+                
                 } else {
-                    println!("final field is not avg");
-                    println!("field is: {}", field);
+                    // println!("final field is not avg");
+                    
                     field.clone()
                 };
-    
+                // println!("field is: {}", final_field);
                 final_tuple.push(final_field);
             }
             // println!("PRINTING IN OPEN {:?}", final_tuple);
@@ -207,7 +226,8 @@ impl OpIterator for Aggregate {
             // Get the next tuple and increment the index
             let next_tuple = self.result_tuples[self.result_index].clone();
             self.result_index += 1;
-            // println!("PRINTING IN NEXT() {}", next_tuple);
+            println!("PRINTING IN NEXT() {}", next_tuple);
+
             Ok(Some(next_tuple)) //next gives a vector of tuples
         } else {
             // No more tuples to return
@@ -430,7 +450,7 @@ mod test {
             // 2 4 4.0
             // 2 5 5.5
             assert_eq!(t.len(), 4);
-            assert_eq!(t[0], Tuple::new(vec![f_int(1), f_int(3), f_decimal(1.5)]));
+            assert_eq!(t[0], Tuple::new(vec![f_int(1), f_int(3), f_decimal(1.5)])); //fails
             assert_eq!(t[1], Tuple::new(vec![f_int(1), f_int(4), f_decimal(3.0)]));
             assert_eq!(t[2], Tuple::new(vec![f_int(2), f_int(4), f_decimal(4.0)]));
             assert_eq!(t[3], Tuple::new(vec![f_int(2), f_int(5), f_decimal(5.5)]));
