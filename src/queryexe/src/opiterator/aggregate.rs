@@ -36,6 +36,8 @@ pub struct Aggregate {
 }
 
 impl Aggregate {
+    
+
     pub fn new(
         managers: &'static Managers,
         groupby_expr: Vec<ByteCodeExpr>,
@@ -152,6 +154,8 @@ impl OpIterator for Aggregate {
     }
 
     fn open(&mut self) -> Result<(), CrustyError> {
+        const SHIFT: i64 = 10000;
+
         //ppen the child operator
         self.child.open()?;
     
@@ -172,7 +176,7 @@ impl OpIterator for Aggregate {
                     let count = *self.count_map.get(group_key).unwrap_or(&1) as i64;
                     
                     if let Field::Int(sum) = field {
-                        Field::Decimal((sum * 10000 / count), 4) //make 10,000 into a constant
+                        Field::Decimal((sum * SHIFT / count), 4) //make 10,000 into a constant
                     } else {
                         return Err(CrustyError::CrustyError("Expected Int field for Avg".to_string()));
                     }

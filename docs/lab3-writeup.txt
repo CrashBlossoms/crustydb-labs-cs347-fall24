@@ -1,0 +1,11 @@
+NestedLoopJoin was designed for simplicity at the cost of efficiency. It simply loops over every tuple in one data source and compares it to every
+tuple in the other. It evaluates the join condition for each of these pairs and, if the condition is satisfied, combines the fields of the tuples.
+
+Aggregate computes summaries of the data like SUM, AVG, MIN, etc. It does this by evaluating expression on each tuple and determining which group 
+it belongs to. As we process the data, aggregated values are updated at every step. Once we have processed all the tuples, we finalize the result (e.g 
+we compute averages by dividing the sum by the count for each group).
+
+HashJoin takes a set of data and builds a hash table from it. It gets the joing key for every tuple in this set and uses it to store the tuples in the 
+table. Once this table is built, HJ iterates over the second data set and determines the join key for each of its tuples. It probes the table for matching
+tuples. For every match, it combines the fields of the tuples. Since hash table lookups are fast, HJ is much faster than a nested loop join. It works
+especially well for equijoins.
