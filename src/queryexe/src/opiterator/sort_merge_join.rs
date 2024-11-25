@@ -20,7 +20,15 @@ pub struct SortMergeJoin {
     will_rewind: bool,
 
     // States (Reset on close)
-    // todo!(Add the states you need to maintain here)
+    //
+    // fn sort_tuples(&self, mut tuples: Vec<Tuple>, exprs: &[(ByteCodeExpr, bool)]) -> Result<Vec<Tuple>, CrustyError>; todo!(Add the states you need to maintain here)
+    left_sorted: Vec<Tuple>, 
+    right_sorted: Vec<Tuple>,              // Sorted right data
+    left_iter: Option<std::vec::IntoIter<Tuple>>, // Iterator for left data
+    right_iter: Option<std::vec::IntoIter<Tuple>>, // Iterator for right data
+    current_left: Option<Tuple>,           // Current tuple from left
+    current_right: Option<Tuple>,          // Current tuple from right
+    open: bool
 }
 
 impl SortMergeJoin {
@@ -40,8 +48,46 @@ impl SortMergeJoin {
         if left_expr.is_empty() {
             return Err(c_err("SMJ: Join predicate cannot be empty"));
         }
-        todo!("Add your code");
+        Ok(SortMergeJoin {
+            left_expr,
+            right_expr,
+            left_child,
+            right_child,
+            left_sorted: Vec::new(),
+            right_sorted: Vec::new(),
+            left_iter: None,
+            right_iter: None,
+            current_left: None,
+            current_right: None,
+            schema,
+            managers,
+            will_rewind: true,
+            open: false
+        })
     }
+
+    //sort the tuples in one table (either ascending or descending order)
+    fn sort_tuples( //problem is here! "equal" tuple keys are sorted arbitraily (must be consistent between sortings)
+        &self,
+        mut tuples: Vec<Tuple>,
+        exprs: &[(ByteCodeExpr, bool)],
+    ) -> Result<Vec<Tuple>, CrustyError> {
+        
+        tuples.sort_by(|a, b| {
+            
+            for (expr, ascending) in exprs {
+                let left_key = Field::unwrap_int_field(&expr.eval(a));
+                let right_key =  Field::unwrap_int_field(&expr.eval(b)); //had .unwrap() before
+                let cmp = left_key.cmp(&right_key);
+                if cmp != std::cmp::Ordering::Equal {
+                    return if *ascending { cmp.reverse() } else { cmp };
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
+        Ok(tuples)
+    }
+
 }
 
 impl OpIterator for SortMergeJoin {
@@ -53,19 +99,93 @@ impl OpIterator for SortMergeJoin {
     }
 
     fn open(&mut self) -> Result<(), CrustyError> {
-        todo!("Add your code");
+        self.left_child.configure(true);
+        self.left_child.open()?;
+        self.left_child.rewind()?;
+        
+        self.right_child.configure(true);
+        self.right_child.open()?;
+        self.right_child.rewind()?;
+
+        self.open = true;
+    
+        //fetch and sort the left tuples
+        let mut left_tuples = Vec::new();
+        while let Some(tuple) = self.left_child.next()? {
+            left_tuples.push(tuple);
+        }
+        self.left_sorted = self.sort_tuples(left_tuples, &self.left_expr)?;
+    
+        //fetch and sort the right tuples
+        let mut right_tuples = Vec::new();
+        while let Some(tuple) = self.right_child.next()? {
+            right_tuples.push(tuple);
+        }
+        self.right_sorted = self.sort_tuples(right_tuples, &self.right_expr)?;
+    
+        //initialize the iterators
+        self.left_iter = Some(self.left_sorted.clone().into_iter());
+        self.right_iter = Some(self.right_sorted.clone().into_iter());
+        self.current_left = self.left_iter.as_mut().unwrap().next();
+        self.current_right = self.right_iter.as_mut().unwrap().next();
+        Ok(())
     }
 
     fn next(&mut self) -> Result<Option<Tuple>, CrustyError> {
-        todo!("Add your code");
-    }
 
+        //panic if we haven't opened yet
+        if self.open == false {
+            panic!();
+        }
+
+        //while there are more tuples to join
+        while let (Some(left), Some(right)) = (&self.current_left, &self.current_right) {
+
+            //evaluate their join keys
+            let left_key = self.left_expr[0].0.eval(left);
+            let right_key = self.right_expr[0].0.eval(right);
+
+            match left_key.cmp(&right_key) {
+                
+                std::cmp::Ordering::Less => { //if left < right, advance left iter
+                    self.current_left = self.left_iter.as_mut().unwrap().next();
+                }
+                std::cmp::Ordering::Greater => { //if left > right, advance right iter
+                    self.current_right = self.right_iter.as_mut().unwrap().next();
+                }
+                std::cmp::Ordering::Equal => { //if keys exactly match, join tuples and advance right iter
+                    let mut joined_tuple = left.clone();
+                    joined_tuple.field_vals.extend(right.field_vals.clone());
+                    self.current_right = self.right_iter.as_mut().unwrap().next();
+                    return Ok(Some(joined_tuple));
+                }
+            }
+        }
+        Ok(None)
+    }
+    
     fn close(&mut self) -> Result<(), CrustyError> {
-        todo!("Add your code");
+        //get rid of the state we have accumulated
+        self.left_child.close()?;
+        self.right_child.close()?;
+        self.left_sorted.clear();
+        self.right_sorted.clear();
+        self.left_iter = None;
+        self.right_iter = None;
+        self.current_left = None;
+        self.current_right = None;
+        self.open = false;
+        Ok(())
     }
 
     fn rewind(&mut self) -> Result<(), CrustyError> {
-        todo!("Add your code");
+        //panic if we try to rewind without opening first 
+        if self.open == false {
+            panic!();
+        }
+        self.left_child.close()?;
+        self.right_child.close()?;
+        Ok(())
     }
 
     fn get_schema(&self) -> &TableSchema {
@@ -106,6 +226,8 @@ mod test {
 
         let left_expr = vec![(left, false)];
         let right_expr = vec![(right, false)];
+        // println!("left expression is: {:?}", left_expr);
+        // println!("right expression is: {:?}", right_expr);
         (left_expr, right_expr)
     }
 
