@@ -5,3 +5,4 @@ key is less than that of the right's, we advance the left iter to the next tuple
 keys are exactly equal, we perform the join and merge the fields of both the tuples into one and then advance the left iter. We will continue this process
  until there are no more tuples we can join. When we rewind, we simply close the left and right children and re-open them in the next call to open().
 
+Overall the project took about 5 days to complete.
