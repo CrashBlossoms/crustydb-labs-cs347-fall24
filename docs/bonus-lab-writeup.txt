@@ -1,0 +1,7 @@
+SortMergeJoin takes advantage of the efficiency of pre-sorted data to make joins more efficient. When beginning a join, we first sort the two input
+tables by their join keys. We evaluate their respective expressions on their tuples to determine which fields we should sort them by. We put the tuples
+in ascending or descending order. We start iterators on the first tuples of both tables. If the left tuple's (currently selected tuple in left table) join
+key is less than that of the right's, we advance the left iter to the next tuple. If the left is greater than the right, we advance the right iter. If the 
+keys are exactly equal, we perform the join and merge the fields of both the tuples into one and then advance the left iter. We will continue this process
+ until there are no more tuples we can join. When we rewind, we simply close the left and right children and re-open them in the next call to open().
+

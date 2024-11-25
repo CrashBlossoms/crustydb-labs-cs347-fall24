@@ -20,8 +20,6 @@ pub struct SortMergeJoin {
     will_rewind: bool,
 
     // States (Reset on close)
-    //
-    // fn sort_tuples(&self, mut tuples: Vec<Tuple>, exprs: &[(ByteCodeExpr, bool)]) -> Result<Vec<Tuple>, CrustyError>; todo!(Add the states you need to maintain here)
     left_sorted: Vec<Tuple>, 
     right_sorted: Vec<Tuple>,              // Sorted right data
     left_iter: Option<std::vec::IntoIter<Tuple>>, // Iterator for left data
